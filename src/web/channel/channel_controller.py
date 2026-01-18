@@ -87,6 +87,17 @@ async def create_channel(req: ChannelCreateRequest, request: Request):
         if existing:
             return BaseResponse(code=400, message=f"设备编码 '{req.code}' 已存在，请使用其他编码")
         
+        # 检查端口是否已被其他服务端通道占用（仅对服务端模式检查）
+        if req.conn_type == 2:  # TCP 服务端
+            all_channels = ChannelService.get_all_channels()
+            for ch in all_channels:
+                # 仅检查启用的服务端通道
+                if ch.get("conn_type") == 2 and ch.get("port") == req.port:
+                    return BaseResponse(
+                        code=400, 
+                        message=f"端口 {req.port} 已被设备 '{ch.get('name')}' 占用，请使用其他端口"
+                    )
+        
         # 创建通道
         channel_id = ChannelService.create_channel(
             code=req.code,
@@ -230,11 +241,18 @@ async def restart_device(channel_id: int, request: Request):
         device_controller = request.app.state.device_controller
         device_name = channel["name"]
         
-        # 1. 停止并移除旧设备（使用 ID 查找，确保名称变更也能找到）
-        await device_controller.remove_device_by_id(channel_id)
-        log.info(f"已尝试停止旧设备 ID: {channel_id} (名称: {device_name})")
+        # 1. 找到旧设备在列表中的位置
+        original_index = -1
+        for i, device in enumerate(device_controller.device_list):
+            if getattr(device, 'device_id', None) == channel_id:
+                original_index = i
+                break
         
-        # 2. 使用更新后的配置创建新设备
+        # 2. 停止并移除旧设备（使用 ID 查找，确保名称变更也能找到）
+        await device_controller.remove_device_by_id(channel_id)
+        log.info(f"已停止旧设备 ID: {channel_id} (原索引: {original_index})")
+        
+        # 3. 使用更新后的配置创建新设备
         channel_code = channel["code"]
         # 获取协议类型枚举
         channel_protocol_type = ChannelService.get_protocol_type(channel)
@@ -275,8 +293,11 @@ async def restart_device(channel_id: int, request: Request):
         general_device.name = device_name
         general_device.data_update_thread.start()
         
-        # 添加到设备控制器
-        device_controller.device_list.append(general_device)
+        # 4. 在原位置插入新设备（保持列表顺序）
+        if original_index >= 0 and original_index <= len(device_controller.device_list):
+            device_controller.device_list.insert(original_index, general_device)
+        else:
+            device_controller.device_list.append(general_device)
         device_controller.device_map[general_device.name] = general_device
         
         log.info(f"设备 {device_name} 重启成功")

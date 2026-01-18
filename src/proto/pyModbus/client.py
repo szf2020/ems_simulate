@@ -366,26 +366,27 @@ class ModbusClient:
         func_code: int,
         slave_id: int,
         address: int,
-        decode: str = "0x20",
-        register_cnt: int = 1,
-        signed: bool = False,
+        decode: str = "0x41",
     ) -> Union[int, float]:
         """
         根据解析码读取寄存器值并解析为指定数据类型
+        使用 DecodeInfo 统一配置处理
 
         Args:
             func_code: 功能码
             slave_id: 从站地址
             address: 寄存器地址
             decode: 解析码
-            register_count: 寄存器数量
-            signed: 是否为有符号数
 
         Returns:
             Union[int, float]: 解析后的值
         """
         if not self.connected:
             self.connect()
+
+        # 获取解析码完整信息
+        info = Decode.get_info(decode)
+        register_cnt = info.register_cnt
 
         # 读取寄存器值
         if func_code == 1:  # 读取线圈
@@ -399,30 +400,28 @@ class ModbusClient:
         elif func_code == 4:  # 读取输入寄存器
             registers = self.read_input_registers(slave_id, address, register_cnt)
         else:
-            log.error(f"Unsupported function code: {func_code}")
+            if self.log:
+                self.log.error(f"Unsupported function code: {func_code}")
+            return 0
 
         if not registers:
             return 0
 
-        # 根据解析码处理数据类型
-        endian = Decode.get_endian(decode)
-
-        if register_cnt == 2:  # 32位数据
-            packed = struct.pack(f"{endian}HH", *registers)
-            if Decode.get_decode_type(decode) == DecodeType.Float:
-                return struct.unpack(f"{endian}f", packed)[0]
-            else:
-                fmt = f"{endian}l" if signed else f"{endian}L"
-                return struct.unpack(fmt, packed)[0]
-        else:  # 16位数据
+        # 将寄存器值打包为字节
+        if register_cnt == 4:  # 64位
+            packed = struct.pack(">HHHH" if info.is_big_endian else "<HHHH", *registers)
+        elif register_cnt == 2:  # 32位
+            packed = struct.pack(">HH" if info.is_big_endian else "<HH", *registers)
+        else:  # 16位
             value = registers[0]
-            # 小端序处理
-            if endian == "<":
+            if not info.is_big_endian:  # 小端序处理
                 value = ((value & 0xFF) << 8) | ((value >> 8) & 0xFF)
-            # 有符号数处理
-            if signed and value > 0x7FFF:
+            if info.is_signed and value > 0x7FFF:
                 value -= 0x10000
             return value
+        
+        # 使用统一的解包方法
+        return Decode.unpack_value(info.pack_format, packed)
 
     def write_value_by_address(
         self,
@@ -430,12 +429,11 @@ class ModbusClient:
         slave_id: int,
         address: int,
         value: Union[int, float],
-        decode: str = "0x20",
-        register_cnt: int = 1,
-        signed: bool = False,
+        decode: str = "0x41",
     ) -> bool:
         """
         根据解析码将值写入寄存器
+        使用 DecodeInfo 统一配置处理
 
         Args:
             func_code: 功能码
@@ -443,8 +441,6 @@ class ModbusClient:
             address: 寄存器地址
             value: 要写入的值
             decode: 解析码
-            register_count: 寄存器数量
-            signed: 是否为有符号数
 
         Returns:
             bool: 写入是否成功
@@ -452,34 +448,29 @@ class ModbusClient:
         if not self.connected:
             self.connect()
 
-        # 根据解析码准备要写入的寄存器值
-        decode_type = Decode.get_decode_type(decode)
-        endian = Decode.get_endian(decode)
-
-        if register_cnt == 2:
-            if decode_type == DecodeType.Float:  # 浮点数处理
-                packed = struct.pack(f"{endian}f", float(value))
-                registers = list(struct.unpack(f"{endian}HH", packed))
-            else:
-                fmt = f"{endian}l" if signed else f"{endian}L"
-                packed = struct.pack(fmt, int(value))
-                registers = list(struct.unpack(f"{endian}HH", packed))
-        elif register_cnt == 1:  # 默认16位整数
+        # 获取解析码完整信息
+        info = Decode.get_info(decode)
+        register_cnt = info.register_cnt
+        
+        # 使用统一的打包方法
+        packed = Decode.pack_value(info.pack_format, value)
+        
+        # 将打包后的字节转换为寄存器值列表
+        if register_cnt == 4:  # 64位
+            registers = list(struct.unpack(">HHHH" if info.is_big_endian else "<HHHH", packed))
+        elif register_cnt == 2:  # 32位
+            registers = list(struct.unpack(">HH" if info.is_big_endian else "<HH", packed))
+        else:  # 16位
             val = int(value)
-            if signed and val < 0:
+            if info.is_signed and val < 0:
                 val = (1 << 16) + val
             registers = [val & 0xFFFF]
-            # 小端序处理
-            if endian == "<":
-                registers[0] = ((registers[0] & 0xFF) << 8) | (
-                    (registers[0] >> 8) & 0xFF
-                )
+            if not info.is_big_endian:  # 小端序处理
+                registers[0] = ((registers[0] & 0xFF) << 8) | ((registers[0] >> 8) & 0xFF)
 
         # 写入寄存器值
         if func_code in [5, 15]:  # 线圈操作
-            return self.write_multiple_coils(
-                slave_id, address, [bool(v) for v in registers]
-            )
+            return self.write_multiple_coils(slave_id, address, [bool(v) for v in registers])
         elif func_code in [6, 16]:  # 寄存器操作
             if func_code == 6 and len(registers) == 1:
                 return self.write_single_register(slave_id, address, registers[0])

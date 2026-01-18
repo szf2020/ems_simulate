@@ -25,7 +25,44 @@
         </el-col>
         <el-col :span="12">
           <el-form-item label="解析码" class="form-item">
-            <el-input v-model="metadataForm.decode_code" />
+            <el-select v-model="metadataForm.decode_code" placeholder="选择解析码">
+              <el-option-group label="16位整数">
+                <el-option label="0x20 - 无符号(大端)" value="0x20" />
+                <el-option label="0x21 - 有符号(大端)" value="0x21" />
+                <el-option label="0xC0 - 无符号(小端)" value="0xC0" />
+                <el-option label="0xC1 - 有符号(小端)" value="0xC1" />
+                <el-option label="0xB0 - 无符号(大端字交换)" value="0xB0" />
+                <el-option label="0xB1 - 有符号(大端字交换)" value="0xB1" />
+              </el-option-group>
+              <el-option-group label="32位整数">
+                <el-option label="0x40 - 无符号(大端)" value="0x40" />
+                <el-option label="0x41 - 有符号(大端)" value="0x41" />
+                <el-option label="0xD0 - 无符号(小端)" value="0xD0" />
+                <el-option label="0xD1 - 有符号(小端)" value="0xD1" />
+                <el-option label="0x43 - 无符号(大端字交换)" value="0x43" />
+                <el-option label="0x44 - 有符号(大端字交换)" value="0x44" />
+                <el-option label="0xD4 - 无符号(小端字交换)" value="0xD4" />
+                <el-option label="0xD5 - 有符号(小端字交换)" value="0xD5" />
+              </el-option-group>
+              <el-option-group label="32位浮点">
+                <el-option label="0x42 - Float(大端)" value="0x42" />
+                <el-option label="0xD2 - Float(小端)" value="0xD2" />
+                <el-option label="0x45 - Float(大端字交换)" value="0x45" />
+                <el-option label="0xD3 - Float(小端字交换)" value="0xD3" />
+              </el-option-group>
+              <el-option-group label="64位">
+                <el-option label="0x60 - 无符号(大端)" value="0x60" />
+                <el-option label="0x61 - 有符号(大端)" value="0x61" />
+                <el-option label="0x62 - Double(大端)" value="0x62" />
+                <el-option label="0xE0 - 无符号(小端)" value="0xE0" />
+                <el-option label="0xE1 - 有符号(小端)" value="0xE1" />
+                <el-option label="0xE2 - Double(小端)" value="0xE2" />
+              </el-option-group>
+              <el-option-group label="8位字符">
+                <el-option label="0x10 - 无符号" value="0x10" />
+                <el-option label="0x11 - 有符号" value="0x11" />
+              </el-option-group>
+            </el-select>
           </el-form-item>
         </el-col>
       </el-row>

@@ -29,7 +29,12 @@ def get_device(device_name: str, request: Request) -> Device:
 @device_router.post("/get_device_list", response_model=DeviceNameListResponse)
 async def get_device_name_list(request: Request):
     try:
-        device_name_list = [deepcopy(device.name) for device in request.app.state.device_controller.device_list]
+        # 按 device_id 排序，确保顺序稳定
+        sorted_devices = sorted(
+            request.app.state.device_controller.device_list,
+            key=lambda d: getattr(d, 'device_id', 0)
+        )
+        device_name_list = [deepcopy(device.name) for device in sorted_devices]
         return DeviceNameListResponse(data=device_name_list)
     except Exception as e:
         log.error(f"获取设备名列表失败: {e}")

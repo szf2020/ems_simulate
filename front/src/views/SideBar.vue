@@ -23,9 +23,9 @@
         
         <!-- 动态生成菜单项 -->
         <el-menu-item
-          v-for="route in menuRouter.getRoutes()"
-          :key="route.path"
-          :index="route.path"
+          v-for="deviceName in deviceList"
+          :key="deviceName"
+          :index="`/device/${deviceName}`"
           class="device-menu-item"
         >
           <el-icon>
@@ -33,19 +33,19 @@
           </el-icon>
           <template #title>
             <div class="menu-item-content">
-              <span>{{ route.name }}</span>
+              <span>{{ deviceName }}</span>
               <div v-if="!isCollapse" class="menu-item-actions">
                 <el-button 
                   link
                   size="small" 
                   :icon="Edit"
-                  @click.stop="handleEditDevice(route)"
+                  @click.stop="handleEditDevice(deviceName)"
                 />
                 <el-button 
                   link
                   size="small" 
                   :icon="Delete"
-                  @click.stop="handleDeleteDevice(route)"
+                  @click.stop="handleDeleteDevice(deviceName)"
                 />
               </div>
             </div>
@@ -82,6 +82,7 @@ import { isCollapse } from "@/components/header/isCollapse";
 import AppHeader from "@/components/header/AppHeader.vue";
 import AddDeviceDialog from "@/components/device/AddDeviceDialog.vue";
 import { deleteChannel, getChannelList, getChannel } from "@/api/channelApi";
+import { getDeviceList } from "@/api/deviceApi";
 import { ElMessage, ElMessageBox } from "element-plus";
 import Device from "@/views/Device.vue";
 
@@ -89,29 +90,39 @@ const router = useRouter();
 const defaultActive = ref("/");
 const addDeviceDialogVisible = ref(false);
 const editingChannelId = ref<number | null>(null);
+const deviceList = ref<string[]>([]);
 
-onMounted(() => {
-  // 获取所有路由
-  const routes = menuRouter.getRoutes();
+// 从后端获取设备列表
+const fetchDeviceList = async () => {
+  try {
+    deviceList.value = await getDeviceList();
+  } catch (error) {
+    console.error('获取设备列表失败:', error);
+  }
+};
+
+onMounted(async () => {
+  // 获取设备列表
+  await fetchDeviceList();
   
   const isCollapseValue = localStorage.getItem("isCollapse");
   if (isCollapseValue) {
     isCollapse.value = isCollapseValue === "true";
   }
   
-  if (routes.length > 0) {
+  if (deviceList.value.length > 0) {
     // 从 localStorage 中恢复选中的路由
     const savedActive = localStorage.getItem("activeRoute");
     
     // 验证保存的路由是否仍然存在
-    const routeExists = savedActive && routes.some(r => r.path === savedActive);
+    const deviceExists = savedActive && deviceList.value.some(d => `/device/${d}` === savedActive);
     
-    if (routeExists) {
+    if (deviceExists) {
       defaultActive.value = savedActive;
     } else {
-      // 使用第一个路由作为默认选中
-      defaultActive.value = routes[0].path;
-      localStorage.setItem("activeRoute", routes[0].path);
+      // 使用第一个设备作为默认选中
+      defaultActive.value = `/device/${deviceList.value[0]}`;
+      localStorage.setItem("activeRoute", defaultActive.value);
     }
     
     // 确保导航到选中的路由
@@ -128,35 +139,63 @@ const handleMenuSelect = (path: string) => {
 
 // 显示添加设备对话框
 const showAddDeviceDialog = () => {
+  editingChannelId.value = null;  // 重置为新增模式
   addDeviceDialogVisible.value = true;
 };
 
-// 设备添加成功后刷新路由
-const handleDeviceAdded = async (deviceName: string) => {
-  // 添加新路由
-  const route = {
-    path: `/device/${deviceName}`,
-    name: deviceName,
-    meta: {
-      title: deviceName
-    },
-    component: () => import("@/views/Device.vue")
-  };
-  menuRouter.addRoute(route);
-  
-  // 导航到新设备
-  const newPath = `/device/${deviceName}`;
-  defaultActive.value = newPath;
-  localStorage.setItem("activeRoute", newPath);
-  router.push(newPath);
+// 设备添加/编辑成功后刷新路由
+const handleDeviceAdded = async (deviceName: string, isEdit?: boolean, oldName?: string) => {
+  if (isEdit && oldName) {
+    // 编辑模式：如果名称改变，需要更新路由
+    if (oldName !== deviceName) {
+      // 移除旧路由
+      menuRouter.removeRoute(oldName);
+      
+      // 找到旧路由在列表中的位置（通过获取所有路由）
+      const routes = menuRouter.getRoutes();
+      
+      // 添加新路由
+      const route = {
+        path: `/device/${deviceName}`,
+        name: deviceName,
+        meta: {
+          title: deviceName
+        },
+        component: () => import("@/views/Device.vue")
+      };
+      menuRouter.addRoute(route);
+    }
+    // 导航到新设备名称
+    const newPath = `/device/${deviceName}`;
+    defaultActive.value = newPath;
+    localStorage.setItem("activeRoute", newPath);
+    router.push(newPath);
+  } else {
+    // 新增模式：添加新路由
+    const route = {
+      path: `/device/${deviceName}`,
+      name: deviceName,
+      meta: {
+        title: deviceName
+      },
+      component: () => import("@/views/Device.vue")
+    };
+    menuRouter.addRoute(route);
+    
+    // 导航到新设备
+    const newPath = `/device/${deviceName}`;
+    defaultActive.value = newPath;
+    localStorage.setItem("activeRoute", newPath);
+    router.push(newPath);
+  }
 };
 
 // 编辑设备
-const handleEditDevice = async (route: any) => {
+const handleEditDevice = async (deviceName: string) => {
   try {
     // 获取对应的channel_id
     const channels = await getChannelList();
-    const channel = channels.find(c => c.name === route.name);
+    const channel = channels.find(c => c.name === deviceName);
     
     if (channel) {
       editingChannelId.value = channel.id;
@@ -170,10 +209,10 @@ const handleEditDevice = async (route: any) => {
 };
 
 // 删除设备
-const handleDeleteDevice = async (route: any) => {
+const handleDeleteDevice = async (deviceName: string) => {
   try {
     await ElMessageBox.confirm(
-      `确定要删除设备 "${route.name}" 吗？删除后将无法恢复。`,
+      `确定要删除设备 "${deviceName}" 吗？删除后将无法恢复。`,
       '删除确认',
       {
         confirmButtonText: '确定',
@@ -184,7 +223,7 @@ const handleDeleteDevice = async (route: any) => {
     
     // 从通道列表获取对应的channel_id
     const channels = await getChannelList();
-    const channel = channels.find(c => c.name === route.name);
+    const channel = channels.find(c => c.name === deviceName);
     
     if (channel) {
       await deleteChannel(channel.id);

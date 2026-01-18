@@ -186,7 +186,7 @@ const props = defineProps<{
 // Emits
 const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void;
-  (e: 'success', deviceName: string): void;
+  (e: 'success', deviceName: string, isEdit?: boolean, oldName?: string): void;
   (e: 'close'): void;
 }>();
 
@@ -217,6 +217,7 @@ watch(() => [props.visible, props.channelId], async ([visible, channelId]) => {
         form.stop_bits = channel.stop_bits || 1;
         form.parity = channel.parity || 'N';
         form.rtu_addr = channel.rtu_addr || '1';
+        originalName.value = channel.name || ''; // 保存原始名称
         
         // 根据conn_type设置mediaType
         mediaType.value = (form.conn_type === 0 || form.conn_type === 3) ? 'serial' : 'network';
@@ -238,6 +239,9 @@ const uploadRef = ref();
 
 // 加载状态
 const loading = ref(false);
+
+// 原始设备名称（用于编辑模式下判断是否改名）
+const originalName = ref<string>('');
 
 // 介质类型：'serial' 或 'network'
 const mediaType = ref<'serial' | 'network'>('network');
@@ -408,13 +412,13 @@ const handleSubmit = async () => {
       if (!isEditMode.value) {
         const startResult = await createAndStartDevice(channelId);
         ElMessage.success(`设备 ${startResult.device_name} 启动成功`);
-        // 4. 发送成功事件
-        emit('success', startResult.device_name);
+        // 刷新页面以更新UI（确保设备列表顺序与后端一致）
+        window.location.reload();
       } else {
         // 编辑模式：重启设备以应用新配置
         await restartDevice(channelId);
         ElMessage.success('设备配置已更新并重启');
-        // 刷新页面以更新UI
+        // 刷新页面以更新UI（数据库已按ID排序，刷新后顺序正确）
         window.location.reload();
       }
       

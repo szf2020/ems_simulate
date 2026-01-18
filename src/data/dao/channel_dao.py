@@ -18,11 +18,11 @@ class ChannelDao:
 
     @classmethod
     def get_all_channels(cls) -> List[ChannelDict]:
-        """获取所有通道"""
+        """获取所有通道（按 ID 排序）"""
         try:
             with local_session() as session:
                 with session.begin():
-                    result = session.query(Channel).where(Channel.enable == True).all()
+                    result = session.query(Channel).where(Channel.enable == True).order_by(Channel.id).all()
                     return [item.to_dict() for item in result]
         except Exception as e:
             log.error(f"获取通道列表失败: {str(e)}")

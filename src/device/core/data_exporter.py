@@ -86,6 +86,9 @@ class DataExporter:
                 if name is None or name in str(yt.name):
                     table_data.append(self._format_yc_row(yt, frame_type_dict))
 
+        # 按地址排序，确保列表顺序稳定
+        table_data.sort(key=lambda row: int(row[0]) if row[0].isdigit() else 0)
+
         total = len(table_data)
 
         if page_index is None or page_size is None:

@@ -346,37 +346,36 @@ class ModbusServer:
         rtu_addr,
         address,
         value,
-        decode="0x20",  # 默认解析码
-        register_cnt=1,
-        signed=False,
+        decode="0x41",  # 默认解析码
     ):
         """
         根据解析码(decode)判断数据类型并设置寄存器值
+        使用 DecodeInfo 统一配置处理
         """
         func_code = int(func_code)
         rtu_addr = int(rtu_addr)
 
-        # 根据解析码选择处理方式
-        decode_type = Decode.get_decode_type(decode)
-        endian = Decode.get_endian(decode)
-        if register_cnt == 2:
-            if decode_type == DecodeType.Float:  # 浮点数处理
-                packed = struct.pack(f"{endian}f", float(value))
-                registers = list(struct.unpack(f"{endian}HH", packed))
-            else:
-                fmt = f"{endian}l" if signed else f"{endian}L"
-                packed = struct.pack(fmt, int(value))
-                registers = list(struct.unpack(f"{endian}HH", packed))
-        elif register_cnt == 1:  # 默认16位整数
-            value = int(value)
-            if signed and value < 0:
-                value = (1 << 16) + value
-            registers = [value & 0xFFFF]
-            # 小端序处理
-            if endian == "<":
-                registers[0] = ((registers[0] & 0xFF) << 8) | (
-                    (registers[0] >> 8) & 0xFF
-                )
+        # 获取解析码完整信息
+        info = Decode.get_info(decode)
+        pack_format = info.pack_format
+        register_cnt = info.register_cnt
+        
+        # 使用统一的打包方法
+        packed = Decode.pack_value(pack_format, value)
+        
+        # 将打包后的字节转换为寄存器值列表
+        if register_cnt == 4:  # 64位
+            registers = list(struct.unpack(">HHHH" if info.is_big_endian else "<HHHH", packed))
+        elif register_cnt == 2:  # 32位
+            registers = list(struct.unpack(">HH" if info.is_big_endian else "<HH", packed))
+        else:  # 16位
+            # 对于16位数据，直接使用打包后的值
+            val = int(value)
+            if info.is_signed and val < 0:
+                val = (1 << 16) + val
+            registers = [val & 0xFFFF]
+            if not info.is_big_endian:  # 小端序处理
+                registers[0] = ((registers[0] & 0xFF) << 8) | ((registers[0] >> 8) & 0xFF)
 
         # 设置寄存器值
         if func_code == 10:
@@ -388,36 +387,41 @@ class ModbusServer:
         func_code,
         rtu_addr,
         address,
-        decode="0x20",
-        register_cnt=1,
-        signed=False,
+        decode="0x41",
     ):
+        """
+        根据解析码读取并解析寄存器值
+        使用 DecodeInfo 统一配置处理
+        """
         func_code = int(func_code)
         rtu_addr = int(rtu_addr)
         if func_code == 10:
             func_code = 6
 
-        # 获取原始寄存器值（每个寄存器16位）
+        # 获取解析码完整信息
+        info = Decode.get_info(decode)
+        register_cnt = info.register_cnt
+
+        # 获取原始寄存器值
         raw_values = self.slaves[rtu_addr].getValues(func_code, address, register_cnt)
         if not raw_values:
             return 0
 
-        endian = Decode.get_endian(decode)
-        # 数据类型解析逻辑
-        if register_cnt == 2:  # 32位数据
-            packed = struct.pack(f"{endian}HH", *raw_values)
-            if Decode.get_decode_type(decode) == DecodeType.Float:
-                return struct.unpack(f"{endian}f", packed)[0]
-            else:
-                fmt = f"{endian}l" if signed else f"{endian}L"
-                return struct.unpack(fmt, packed)[0]
-        else:  # 16位数据（新增字节序处理）
+        # 将寄存器值打包为字节
+        if register_cnt == 4:  # 64位
+            packed = struct.pack(">HHHH" if info.is_big_endian else "<HHHH", *raw_values)
+        elif register_cnt == 2:  # 32位
+            packed = struct.pack(">HH" if info.is_big_endian else "<HH", *raw_values)
+        else:  # 16位
             value = raw_values[0]
-            if endian == "<":  # 小端序处理
+            if not info.is_big_endian:  # 小端序处理
                 value = ((value & 0xFF) << 8) | ((value >> 8) & 0xFF)
-            if signed and value > 0x7FFF:  # 有符号数补码转换
+            if info.is_signed and value > 0x7FFF:
                 value -= 0x10000
             return value
+        
+        # 使用统一的解包方法
+        return Decode.unpack_value(info.pack_format, packed)
 
     # 业务部分
     def setAllRegisterValues(self, yc_dict, yx_dict):
