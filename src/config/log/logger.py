@@ -17,6 +17,9 @@ LOG_COLORS = {
 COLOR_RESET = "\033[1;0m"
 
 class Log:
+    # 静态标记：确保只移除一次默认 handler
+    _default_handler_removed = False
+
     def __init__(
         self,
         filename: Optional[str] = None,
@@ -29,6 +32,11 @@ class Log:
         compression: Optional[str] = None,  # 新增压缩功能
         is_backtrace: bool = True,
     ):
+        # 移除 loguru 默认的 stderr handler，避免日志重复打印
+        if not Log._default_handler_removed:
+            logger.remove()
+            Log._default_handler_removed = True
+
         self.is_backtrace = is_backtrace
         self.logger = logger.bind(task=filename)
         # 设置日志文件路径
