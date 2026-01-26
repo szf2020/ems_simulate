@@ -128,14 +128,21 @@ const toggleDevice = async () => {
           simulationStatus.value = false;
           simulationStatusStr.value = "停止";
         }
+      } else {
+        ElMessage.error("停止设备失败");
       }
     } else {
       if (await startDevice(routeName.value)) {
         deviceStatus.value = true;
         deviceStatusStr.value = "运行中";
+      } else {
+        ElMessage.error("启动设备失败");
       }
     }
-  } catch (error) { console.error(error); }
+  } catch (error: any) { 
+    console.error(error);
+    ElMessage.error(error.message || "操作失败");
+  }
   finally { isProcessing.value = false; }
 };
 

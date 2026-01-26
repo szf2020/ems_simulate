@@ -106,9 +106,10 @@
         <template #header>
           <div class="header-content">
             <span>{{ header }}</span>
-            <el-tooltip v-if="['解析码', '乘法系数', '加法系数'].includes(header)" effect="dark" placement="top">
+            <el-tooltip v-if="shouldShowTooltip(header)" effect="dark" placement="top">
               <template #content>
                 <div v-if="header === '解析码'">{{ toolTip }}</div>
+                <div v-else-if="header === '功能码'">{{ funcCodeToolTip }}</div>
                 <div v-else>算法: 真实值 = 寄存器值 × 系数 + 偏移量</div>
               </template>
               <el-icon class="help-icon"><QuestionFilled /></el-icon>
@@ -135,19 +136,30 @@
       <el-table-column
         v-if="isClientDevice"
         label="操作"
-        width="100"
+        width="180"
         fixed="right"
       >
         <template #default="scope">
-          <el-button
-            type="primary"
-            size="small"
-            :icon="Download"
-            @click="handleReadPoint(scope.row['测点编码'])"
-            :loading="readingPoints[scope.row['测点编码']]"
-          >
-            读取
-          </el-button>
+          <div class="action-buttons">
+            <el-button
+              type="primary"
+              size="small"
+              :icon="Download"
+              @click="handleReadPoint(scope.row['测点编码'])"
+              :loading="readingPoints[scope.row['测点编码']]"
+            >
+              读取
+            </el-button>
+            <el-button
+              v-if="[PointType.YK, PointType.YT].includes(getPointType(scope.row['帧类型']))"
+              type="success"
+              size="small"
+              :icon="Edit"
+              @click="handleWritePoint(scope.row)"
+            >
+              写入
+            </el-button>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -166,12 +178,20 @@
       />
     </div>
   </div>
+  <WritePointDialog
+    v-model="writeDialogVisible"
+    :deviceName="deviceName"
+    :pointCode="currentPoint.code"
+    :currentValue="currentPoint.value"
+    :pointType="currentPoint.type"
+    @success="handleWriteSuccess"
+  />
 </template>
 
 <script setup lang="ts">
 import { ref, computed, reactive, type PropType } from 'vue'
 import { useRoute } from "vue-router"
-import { QuestionFilled, Download } from "@element-plus/icons-vue"
+import { QuestionFilled, Download, Edit } from "@element-plus/icons-vue"
 import { ElMessage } from 'element-plus'
 import { getPointType, PointType } from '@/types/point'
 import { readSinglePoint } from '@/api/deviceApi'
@@ -182,6 +202,7 @@ import FloatRegister from '../register/FloatRegister.vue'
 import EditPointLimit from '../point/EditPointLimit.vue'
 import PointSimulator from '../point/PointSimulator.vue'
 import EditPointMetadata from '../point/EditPointMetadata.vue'
+import WritePointDialog from './WritePointDialog.vue'
 
 const props = defineProps({
   slaveId: { type: Number, required: true },
@@ -213,7 +234,7 @@ const isDlt645 = computed(() => typeof props.protocolType === 'string' && props.
 
 const isClientDevice = computed(() => {
   const t = props.protocolType;
-  return t === 'ModbusTcpClient' || t === 'Iec104Client' || t === 'Dlt645Client';
+  return ['ModbusTcpClient', 'Iec104Client', 'Dlt645Client'].includes(String(t));
 });
 
 const readingPoints = reactive<Record<string, boolean>>({});
@@ -222,8 +243,12 @@ const showHexAddress = ref(false);
 const hiddenColumns = computed(() => {
   // 始终隐藏16进制地址列（已合并到地址列）
   const hidden = ['16进制地址', '地址'];
-  if (!isModbus.value && !isDlt645.value) hidden.push('位', '功能码');
-  else if (isDlt645.value) hidden.push('位');
+  
+  // 非Modbus协议，隐藏相关专有列
+  if (!isModbus.value) {
+    hidden.push('位', '功能码', '解析码');
+  }
+  
   return hidden;
 });
 
@@ -304,7 +329,32 @@ const handleReadPoint = async (pointCode: string) => {
   }
 };
 
+const writeDialogVisible = ref(false);
+const currentPoint = reactive({
+  code: '',
+  value: '' as string | number,
+  type: 0
+});
+
+const handleWritePoint = (row: any) => {
+  currentPoint.code = row['测点编码'];
+  currentPoint.value = row['真实值'];
+  currentPoint.type = getPointType(row['帧类型']);
+  writeDialogVisible.value = true;
+};
+
+const handleWriteSuccess = () => {
+  emit('refresh');
+};
+
+const shouldShowTooltip = (header: string) => {
+  if (['乘法系数', '加法系数'].includes(header)) return true;
+  if (!isModbus.value) return false;
+  return ['解析码', '功能码'].includes(header);
+};
+
 const toolTip = "解析码说明: 16位(0x20/21/C0/C1), 32位整(0x40/41/D0/D1), 32位浮(0x42/D2), 64位(0x60/61/E0/E1)";
+const funcCodeToolTip = "01:读线圈 02:读离散输入 03:读保持寄存器 04:读输入寄存器";
 </script>
 
 <style lang="scss" scoped>

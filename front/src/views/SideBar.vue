@@ -256,6 +256,38 @@ const handleDeviceAdded = async (deviceName: string, isEdit?: boolean, oldName?:
     component: () => import("@/views/Device.vue")
   });
   await fetchDeviceGroupTree();
+  
+  // 自动展开新设备所在的分组
+  let found = false;
+  // 1. 检查分组设备
+  const expandGroup = (nodes: TreeNode[]) => {
+    for (const node of nodes) {
+      if (node.isGroup && node.children) {
+        // 检查子节点是否由新设备
+        const hasDevice = node.children.some(child => !child.isGroup && child.name === deviceName);
+        if (hasDevice) {
+           if (!expandedKeys.value.includes(node.nodeKey)) {
+             expandedKeys.value.push(node.nodeKey);
+           }
+           found = true;
+           return; // 暂不支持多层嵌套展开，找到即止，若支持多层需递归查找
+        }
+        // 递归检查子分组
+        expandGroup(node.children);
+        if (found) return;
+      }
+    }
+  };
+  expandGroup(treeData.value);
+
+  // 2. 检查未分组
+  if (!found) {
+    const isUngrouped = ungroupedDevices.value.some(d => d.name === deviceName);
+    if (isUngrouped) {
+      ungroupedExpanded.value = true;
+    }
+  }
+
   navigateToDevice(deviceName);
 };
 

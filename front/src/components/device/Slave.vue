@@ -88,7 +88,7 @@ const pageIndex = ref(1);
 const total = ref(0);
 const activeFilters = ref<Record<string, number>>({});
 const protocolType = ref<number | string>(1);
-const isAutoRead = ref<boolean>(true);
+const isAutoRead = ref<boolean>(false);
 
 const pointTypes = computed<number[]>(() => Object.values(activeFilters.value).flat() as number[]);
 
@@ -153,8 +153,12 @@ const resetPoint = async () => {
 
 watch(() => route.name, async (newVal) => {
   if (newVal) {
+    stopAutoRefresh();
     routeName.value = newVal as string;
-    pageIndex.value = 1; pageSize.value = 10;
+    pageIndex.value = 1; 
+    pageSize.value = 10;
+    isAutoRead.value = false;
+    await stopAutoRead(routeName.value);
     await fetchSlaveList();
   }
 });
@@ -177,11 +181,9 @@ const stopAutoRefresh = () => {
 const handleAutoReadChange = async (enabled: boolean) => {
   if (enabled) {
     await startAutoRead(routeName.value);
-    startAutoRefresh();
     ElMessage.success("已启用自动读取");
   } else {
     await stopAutoRead(routeName.value);
-    stopAutoRefresh();
     ElMessage.success("已停止自动读取");
   }
 };
@@ -206,7 +208,10 @@ const fetchAutoReadStatus = async () => {
 
 onMounted(async () => {
   await fetchSlaveList();
+  // 获取当前自动读取状态
   await fetchAutoReadStatus();
+  // 始终开启表格刷新以支持主动上报协议的数据显示
+  startAutoRefresh();
 });
 onUnmounted(() => { stopAutoRefresh(); });
 </script>

@@ -235,16 +235,19 @@ async def batch_device_operation(group_id: int, request: BatchDeviceOperationReq
                 continue
             
             try:
+                result = False
                 if request.operation == "start":
-                    await device.start()
-                    success_count += 1
+                    result = await device.start()
                 elif request.operation == "stop":
-                    await device.stop()
-                    success_count += 1
+                    result = await device.stop()
                 elif request.operation == "reset":
                     device.resetPointValues()
+                    result = True
+                
+                if result:
                     success_count += 1
                 else:
+                    log.error(f"操作设备 {device_name} 失败: {request.operation} 返回 False")
                     fail_count += 1
             except Exception as e:
                 log.error(f"操作设备 {device_name} 失败: {e}")

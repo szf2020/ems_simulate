@@ -18,8 +18,8 @@ def computeCRC(data):
     return crc
 
 class ModbusTcpClientWithCapture(ModbusTcpClient):
-    def __init__(self, host: str, port: int = 502, message_capture=None):
-        super().__init__(host=host, port=port, framer=Framer.SOCKET)
+    def __init__(self, host: str, port: int = 502, message_capture=None, **kwargs):
+        super().__init__(host=host, port=port, framer=Framer.SOCKET, **kwargs)
         self.message_capture = message_capture
 
     def execute(self, request: ModbusRequest):
@@ -28,8 +28,9 @@ class ModbusTcpClientWithCapture(ModbusTcpClient):
             pdu = bytes([request.function_code]) + request.encode()
 
             # 构造MBAP头部
-            # 注意: self.transaction 在 pymodbus 不同版本中可能不同，这里假设是 standard
-            transaction_id = self.transaction.getNextTID() & 0xFFFF
+            # 注意: 为了避免影响 pymodbus 内部的事务ID计数，这里在捕获日志中使用 0 或不调用 getNextTID
+            # 实际发送时 super().execute 会生成正确的 TID
+            transaction_id = 0 
             protocol_id = 0x0000
             length = len(pdu) + 1  # PDU长度 + 从机ID
             unit_id = request.slave_id

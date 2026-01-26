@@ -6,7 +6,7 @@ const API_BASE_URL = import.meta.env.VUE_APP_API_BASE || '/'; // Nginx会将/api
 
 export const instance = axios.create({
     baseURL: API_BASE_URL,
-    timeout: 10000,
+    timeout: 3000,
     headers: {
         'Content-Type': 'application/json'
     }

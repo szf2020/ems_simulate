@@ -14,10 +14,10 @@
       label-width="110px"
       label-position="right"
     >
-      <DeviceFormBasic v-model:modelValue="form" :group-options="deviceGroupOptions" />
+      <DeviceFormBasic :model-value="form" :group-options="deviceGroupOptions" />
       
       <DeviceFormConfig 
-        v-model:modelValue="form" 
+        :model-value="form" 
         v-model:media-type="mediaType"
         :protocols="protocols"
         :serial-ports="serialPorts"
@@ -174,7 +174,10 @@ const handleSubmit = async () => {
   });
 };
 
-const handleClose = () => { emit('close'); };
+const handleClose = () => {
+  dialogVisible.value = false;
+  emit('close');
+};
 </script>
 
 <style lang="scss">

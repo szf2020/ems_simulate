@@ -71,5 +71,6 @@ declare module 'vue' {
     Slave: typeof import('./src/components/device/Slave.vue')['default']
     Table: typeof import('./src/components/device/Table.vue')['default']
     TextNode: typeof import('./src/components/common/TextNode.vue')['default']
+    WritePointDialog: typeof import('./src/components/device/WritePointDialog.vue')['default']
   }
 }

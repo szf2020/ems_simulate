@@ -83,7 +83,7 @@ class YcService:
             )
 
         elif protocol_type in [ProtocolType.Iec104Server, ProtocolType.Iec104Client]:
-            address = decimal_to_hex(int(item["reg_addr"]) + 16385)
+            address = decimal_to_hex(int(item["reg_addr"], 0))
             return Yc(
                 rtu_addr=1,
                 address=address,

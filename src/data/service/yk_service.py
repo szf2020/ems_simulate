@@ -61,7 +61,7 @@ class YkService:
             return Yk(
                 rtu_addr=item["rtu_addr"],
                 address=process_hex_address(item["reg_addr"]),
-                bit=item["bit"],
+                bit=item["bit"] if item.get("bit") is not None else 0,
                 func_code=item["func_code"] if item.get("func_code") else 5,
                 name=item["name"],
                 code=item["code"],
@@ -72,7 +72,7 @@ class YkService:
             )
 
         elif protocol_type in [ProtocolType.Iec104Server, ProtocolType.Iec104Client]:
-            address = decimal_to_hex(int(item["reg_addr"]))
+            address = decimal_to_hex(int(item["reg_addr"], 0))
             return Yk(
                 rtu_addr=1,
                 address=address,

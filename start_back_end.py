@@ -9,10 +9,6 @@ from src.enums.modbus_def import ProtocolType
 async def init_device_controller():
     """初始化设备控制器，在有事件循环的环境下启动Modbus TCP服务器"""
     device_controller = await get_device_controller()
-    
-    # 启动所有已配置的设备协议处理器 (TCP/RTU/IEC104/DLT645 等)
-    for device in device_controller.device_list:
-        await device.start()
 
 
 async def main():

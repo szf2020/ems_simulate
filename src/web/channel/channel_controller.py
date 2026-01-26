@@ -129,6 +129,65 @@ async def create_channel(req: ChannelCreateRequest, request: Request):
         )
         
         if channel_id > 0:
+            # ==========================================
+            # 新增：立即在内存中创建设备对象，无需重启
+            # ==========================================
+            try:
+                device_controller = request.app.state.device_controller
+                
+                # 1. 准备构建器
+                if req.code.upper().find("PCS") != -1:
+                    builder = GeneralDeviceBuilder(channel_id=channel_id, device=Pcs())
+                elif req.code.upper().find("BREAKER") != -1:
+                    builder = GeneralDeviceBuilder(channel_id=channel_id, device=CircuitBreaker())
+                else:
+                    builder = GeneralDeviceBuilder(channel_id=channel_id, device=GeneralDevice())
+                
+                # 2. 转换协议类型
+                # 注意：ChannelService.get_protocol_type 需要 protocol_type (int) 和 conn_type (int)
+                channel_data_mock = {
+                    "protocol_type": req.protocol_type,
+                    "conn_type": req.conn_type
+                }
+                protocol_enum = ChannelService.get_protocol_type(channel_data_mock)
+
+                # 3. 配置通信参数
+                if req.conn_type in [0, 3]:  # 串口
+                    builder.setDeviceSerialConfig(
+                        serial_port=req.com_port or "",
+                        baudrate=req.baud_rate or 9600,
+                        databits=req.data_bits or 8,
+                        stopbits=req.stop_bits or 1,
+                        parity=req.parity or "E"
+                    )
+                else: 
+                    # 网络设备
+                    # TCP客户端 和 IEC104客户端 需要连接到目标IP
+                    # ProtocolType.ModbusTcpClient 等是枚举
+                    if protocol_enum in [ProtocolType.ModbusTcpClient, ProtocolType.Iec104Client, ProtocolType.Dlt645Client]:
+                        builder.setDeviceNetConfig(port=req.port, ip=req.ip)
+                    else:
+                        # 服务端，监听 0.0.0.0 (Config.DEFAULT_IP)
+                        builder.setDeviceNetConfig(port=req.port, ip=Config.DEFAULT_IP)
+
+                # 4. 创建设备实例
+                new_device = builder.makeGeneralDevice(
+                    device_id=channel_id,
+                    device_name=req.name,
+                    protocol_type=protocol_enum,
+                    is_start=False 
+                )
+                new_device.name = req.name # 确保名字一致
+                
+                # 5. 注册到控制器
+                device_controller.device_list.append(new_device)
+                device_controller.device_map[new_device.name] = new_device
+                
+                log.info(f"设备 {req.name} (ID: {channel_id}) 已在内存中动态创建")
+
+            except Exception as e:
+                log.error(f"内存同步创建设备失败: {e}")
+                # 即使内存同步失败，数据库已创建成功，不阻拦返回，但可能需要前端刷新或重启
             return BaseResponse(
                 message="创建通道成功", 
                 data={
@@ -146,6 +205,7 @@ async def create_channel(req: ChannelCreateRequest, request: Request):
 
 @channel_router.post("/import_points", response_model=BaseResponse)
 async def import_points(
+    request: Request,
     channel_id: int = Form(...),
     file: UploadFile = File(...)
 ):
@@ -171,6 +231,21 @@ async def import_points(
             importer = ExcelPointImporter(channel_id=channel_id)
             yc_count, yx_count, yk_count, yt_count = importer.import_from_excel(tmp_path)
             
+            # 4. 同步更新内存中的设备点表
+            try:
+                device_controller = request.app.state.device_controller
+                device = device_controller.get_device_by_id(channel_id)
+                if device:
+                    # 重新从数据库加载点表
+                    # 注意：importDataPointFromChannel 会清空现有 SimulationPointList 并重新初始化
+                    # 我们需要确保 protocol_type 正确。Device 对象里应该存了。
+                    device.importDataPointFromChannel(channel_id, device.protocol_type)
+                    log.info(f"已同步更新设备 {device.name} (ID: {channel_id}) 的内存点表")
+                else:
+                    log.warning(f"导入点表后未找到内存设备 (ID: {channel_id})，需要手动加载或重启")
+            except Exception as e:
+                log.error(f"同步内存点表失败: {e}")
+
             return BaseResponse(
                 message="导入点表成功",
                 data={

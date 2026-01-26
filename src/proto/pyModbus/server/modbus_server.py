@@ -44,7 +44,7 @@ class ModbusServer:
         bytesize: int = 8,
         parity: str = "N",
         stopbits: int = 1,
-        keep_connection: bool = False,
+        keep_connection: bool = True,
     ):
         self._logger = logger
         self.server = None

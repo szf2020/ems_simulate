@@ -112,14 +112,25 @@ class ChannelDao:
     @classmethod
     def update_channel(cls, channel_id: int, **kwargs) -> bool:
         """更新通道"""
+        from src.data.model.device import Device
         try:
             with local_session() as session:
                 with session.begin():
-                    result = session.query(Channel).where(Channel.id == channel_id).first()
-                    if result:
+                    channel = session.query(Channel).where(Channel.id == channel_id).first()
+                    if channel:
+                        # 1. 更新通道信息
                         for key, value in kwargs.items():
-                            if hasattr(result, key):
-                                setattr(result, key, value)
+                            if hasattr(channel, key):
+                                setattr(channel, key, value)
+                        
+                        # 2. 同步更新关联的设备信息 (Name, Code)
+                        if channel.device_id:
+                            device = session.query(Device).where(Device.id == channel.device_id).first()
+                            if device:
+                                if "name" in kwargs:
+                                    device.name = kwargs["name"]
+                                if "code" in kwargs:
+                                    device.code = kwargs["code"]
                         return True
                     return False
         except Exception as e:
@@ -133,20 +144,26 @@ class ChannelDao:
         from src.data.model.point_yx import PointYx
         from src.data.model.point_yk import PointYk
         from src.data.model.point_yt import PointYt
+        from src.data.model.device import Device
         
         try:
             with local_session() as session:
                 with session.begin():
-                    # 先删除关联的测点
+                    # 1. 先删除关联的测点
                     session.query(PointYc).where(PointYc.channel_id == channel_id).delete()
                     session.query(PointYx).where(PointYx.channel_id == channel_id).delete()
                     session.query(PointYk).where(PointYk.channel_id == channel_id).delete()
                     session.query(PointYt).where(PointYt.channel_id == channel_id).delete()
                     
-                    # 再删除通道
-                    result = session.query(Channel).where(Channel.id == channel_id).first()
-                    if result:
-                        session.delete(result)
+                    # 2. 删除关联的设备 (Device 表)
+                    # 先查出通道，获取 device_id
+                    channel = session.query(Channel).where(Channel.id == channel_id).first()
+                    if channel and channel.device_id:
+                         session.query(Device).where(Device.id == channel.device_id).delete()
+                    
+                    # 3. 再删除通道
+                    if channel:
+                        session.delete(channel)
                         return True
                     return False
         except Exception as e:

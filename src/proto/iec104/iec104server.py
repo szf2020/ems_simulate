@@ -144,6 +144,12 @@ class IEC104Server:
         """启动IEC 104服务器"""
         self.server.start()
 
+    def stop(self):
+        """停止IEC 104服务器"""
+        if self.server:
+            self.server.stop()
+            log.info("IEC 104服务器已停止")
+
     def run(self, timeout=30):
         """
         运行服务器主循环

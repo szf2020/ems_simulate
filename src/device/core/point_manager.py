@@ -118,19 +118,33 @@ class PointManager:
             protocol_type: 协议类型
         """
         log.debug(f"PointManager: Importing points for channel_id={channel_id}, protocol={protocol_type}")
-        # 导入遥测和遥调
+        # 导入遥测
         yc_list = YcService.get_list(channel_id, protocol_type)
         for point in yc_list:
             slave_id = point.rtu_addr
             self.add_point(slave_id, point)
 
-        # 导入遥信和遥控
+        # 导入遥信
         yx_list = YxService.get_list(channel_id, protocol_type)
         for point in yx_list:
             slave_id = point.rtu_addr
             self.add_point(slave_id, point)
             
-        log.debug(f"PointManager: Imported {len(yc_list)} YC points, {len(yx_list)} YX points")
+        # 导入遥调
+        from src.data.service.yt_service import YtService
+        yt_list = YtService.get_list(channel_id, protocol_type)
+        for point in yt_list:
+            slave_id = point.rtu_addr
+            self.add_point(slave_id, point)
+
+        # 导入遥控
+        from src.data.service.yk_service import YkService
+        yk_list = YkService.get_list(channel_id, protocol_type)
+        for point in yk_list:
+            slave_id = point.rtu_addr
+            self.add_point(slave_id, point)
+            
+        log.debug(f"PointManager: Imported {len(yc_list)} YC, {len(yx_list)} YX, {len(yt_list)} YT, {len(yk_list)} YK points")
 
     def reset_all_values(self) -> None:
         """重置所有测点值为 0"""

@@ -517,9 +517,9 @@ class Device:
                         "length": msg.get("length", 0)
                     })
                 
-                # 按序号倒序排列（最新的在前）
+                # 按序号正序排列（旧的在前，符合 Request -> Response 顺序）
                 # 如果有sequence_id，使用sequence_id排序，否则使用timestamp
-                result.sort(key=lambda x: (x.get("sequence_id", 0), x["timestamp"]), reverse=True)
+                result.sort(key=lambda x: (x.get("sequence_id", 0), x["timestamp"]), reverse=False)
                 return result[:limit] if limit else result
         
         return []

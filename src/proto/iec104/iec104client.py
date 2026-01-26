@@ -19,7 +19,7 @@ class IEC104Client:
         self.common_address = common_address
         self.client = c104.Client()
         self.connection: c104.Connection = self.client.add_connection(
-            ip=self.ip, port=self.port, init=c104.Init.ALL
+            ip=self.ip, port=self.port, init=c104.Init.INTERROGATION    # 连接时触发全召唤
         )
         # 添加从站
         self.station: c104.Station = self.connection.add_station(
@@ -54,8 +54,13 @@ class IEC104Client:
         """断开与服务器的连接"""
         if self.connection and self.connection.is_connected:
             self.connection.disconnect()
-            log.info("已断开与服务器的连接")
+        
+        if self.client:
+            self.client.stop()
+        
+        log.info("已断开与服务器的连接")
 
+    @property
     def is_connected(self) -> bool:
         """检查是否已连接"""
         return self.connection is not None and self.connection.is_connected
@@ -108,7 +113,7 @@ class IEC104Client:
         :param frame_type: 帧类型，0-遥测，1-遥信，2-遥控，3-遥调
         :return: 是否写入成功
         """
-        if not self.is_connected():
+        if not self.is_connected:
             log.error("未连接到服务器，无法写入数据")
             raise Exception("未连接到服务器，无法写入数据")
 
@@ -140,7 +145,7 @@ class IEC104Client:
         :param command: 命令类型(c104.Step.LOWER/c104.Step.HIGHER)
         :return: 是否发送成功
         """
-        if not self.is_connected():
+        if not self.is_connected:
             log.error("未连接到服务器，无法发送命令")
             return False
 

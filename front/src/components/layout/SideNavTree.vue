@@ -46,12 +46,14 @@
 </template>
 
 <script lang="ts" setup>
+import { onMounted, ref, watch, nextTick } from "vue";
+import { ElTree } from 'element-plus';
 import { 
   Folder, Cpu, MoreFilled, Edit, Plus, FolderAdd, 
   VideoPlay, VideoPause, Delete 
 } from "@element-plus/icons-vue";
 
-defineProps<{
+const props = defineProps<{
   treeData: any[];
   treeProps: any;
   expandedKeys: string[];
@@ -65,6 +67,35 @@ defineEmits<{
   (e: 'edit-device', data: any): void;
   (e: 'delete-device', data: any): void;
 }>();
+
+const treeRef = ref<InstanceType<typeof ElTree>>();
+
+const expandKeys = () => {
+  nextTick(() => {
+    if (!treeRef.value) return;
+    props.expandedKeys.forEach(key => {
+      const node = treeRef.value?.getNode(key);
+      if (node) {
+        node.expanded = true;
+      }
+    });
+  });
+};
+
+const setCurrentKey = () => {
+  nextTick(() => {
+    if (treeRef.value && props.currentNodeKey) {
+      treeRef.value.setCurrentKey(props.currentNodeKey);
+    }
+  });
+};
+
+watch(() => props.expandedKeys, expandKeys, { deep: true });
+watch(() => props.treeData, () => {
+  expandKeys();
+  setCurrentKey();
+}, { deep: true });
+watch(() => props.currentNodeKey, setCurrentKey);
 </script>
 
 <style lang="scss" scoped>

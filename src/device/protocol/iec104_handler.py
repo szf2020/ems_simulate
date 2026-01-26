@@ -182,9 +182,9 @@ class IEC104ClientHandler(ClientHandler):
         """连接到 IEC104 服务器"""
         try:
             if self._client:
-                self._client.connect()
-                self._is_running = True
-                return True
+                is_connected = self._client.connect()
+                self._is_running = is_connected
+                return is_connected
             return False
         except Exception as e:
             if self._log:

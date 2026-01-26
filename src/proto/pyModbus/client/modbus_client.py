@@ -86,9 +86,21 @@ class ModbusClient:
         """
         try:
             if self.protocol_type == ProtocolType.ModbusTcp or self.protocol_type == ProtocolType.ModbusTcpClient:
-                self.client = ModbusTcpClientWithCapture(host=self.host, port=self.port, message_capture=self.message_capture)
+                self.client = ModbusTcpClientWithCapture(
+                    host=self.host, 
+                    port=self.port, 
+                    message_capture=self.message_capture,
+                    timeout=5.0,
+                    retries=3
+                )
             elif self.protocol_type == ProtocolType.ModbusRtuOverTcp:
-                self.client = ModbusRtuOverTcpClientWithCapture(host=self.host, port=self.port, message_capture=self.message_capture)
+                self.client = ModbusRtuOverTcpClientWithCapture(
+                    host=self.host, 
+                    port=self.port, 
+                    message_capture=self.message_capture,
+                    timeout=5.0,
+                    retries=3
+                )
             elif self.protocol_type == ProtocolType.ModbusRtu:
                 self.client = ModbusSerialClientWithCapture(
                     port=self.serial_port,
@@ -105,6 +117,16 @@ class ModbusClient:
                     print(f"Unsupported protocol type: {self.protocol_type}")
 
             self.connected = self.client.connect()
+            
+            # 双重检查：确认 socket 是否真正建立
+            if self.connected:
+                # 某些版本的 pymodbus 可能在连接失败时仍返回 True (因为启用了重试机制)
+                # 这里强制检查 socket 对象是否创建
+                socket_obj = getattr(self.client, 'socket', None)
+                if socket_obj is None:
+                    if self.log:
+                        self.log.error("Modbus client connect() returned True but socket is None")
+                    self.connected = False
             return self.connected
         except Exception as e:
             if self.log:
@@ -386,7 +408,7 @@ class ModbusClient:
         slave_id: int,
         address: int,
         decode: str = "0x41",
-    ) -> Union[int, float]:
+    ) -> Optional[Union[int, float]]:
         """
         根据解析码读取寄存器值并解析为指定数据类型
         使用 DecodeInfo 统一配置处理
@@ -398,22 +420,29 @@ class ModbusClient:
             decode: 解析码
 
         Returns:
-            Union[int, float]: 解析后的值
+            Optional[Union[int, float]]: 解析后的值, 读取失败返回 None
         """
         if not self.connected:
-            return 0
+            return None
 
         # 获取解析码完整信息
         info = Decode.get_info(decode)
         register_cnt = info.register_cnt
 
+        values = None
+        registers = None
+
         # 读取寄存器值
         if func_code == 1:  # 读取线圈
             values = self.read_coils(slave_id, address, register_cnt)
-            return values[0] if values else 0
+            if not values:
+                return None
+            return values[0]
         elif func_code == 2:  # 读取离散输入
             values = self.read_discrete_inputs(slave_id, address, register_cnt)
-            return values[0] if values else 0
+            if not values:
+                return None
+            return values[0]
         elif func_code == 3:  # 读取保持寄存器
             registers = self.read_holding_registers(slave_id, address, register_cnt)
         elif func_code == 4:  # 读取输入寄存器
@@ -421,10 +450,10 @@ class ModbusClient:
         else:
             if self.log:
                 self.log.error(f"Unsupported function code: {func_code}")
-            return 0
+            return None
 
         if not registers:
-            return 0
+            return None
 
         # 将寄存器值打包为字节
         if register_cnt == 4:  # 64位

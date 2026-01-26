@@ -194,9 +194,9 @@ class ModbusClientHandler(ClientHandler):
         """连接到 Modbus 服务器"""
         try:
             if self._client:
-                self._client.connect()
-                self._is_running = True
-                return True
+                is_connected = self._client.connect()
+                self._is_running = is_connected
+                return is_connected
             return False
         except Exception as e:
             if self._log:
@@ -215,7 +215,7 @@ class ModbusClientHandler(ClientHandler):
             return self._client.read_value_by_address(
                 point.func_code, point.rtu_addr, point.address, point.decode
             )
-        return 0
+        return None
 
     def write_value(self, point: BasePoint, value: Any) -> bool:
         """写入测点值"""

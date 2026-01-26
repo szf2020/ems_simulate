@@ -273,10 +273,10 @@ async def start_device(req: DeviceStartRequest, request: Request):
     try:
         device = get_device(req.device_name, request)
         success = await device.start()
-        return BaseResponse(
-            message="设备启动成功!" if success else "设备启动失败!",
-            data=success
-        )
+        if success:
+            return BaseResponse(message="设备启动成功!", data=True)
+        else:
+            return BaseResponse(code=500, message="设备启动失败! (连接被拒绝或超时)", data=False)
     except KeyError:
         return BaseResponse(code=404, message=f"设备 {req.device_name} 不存在!", data=False)
     except Exception as e:
@@ -305,10 +305,10 @@ async def stop_device(req: DeviceStopRequest, request: Request):
     try:
         device = get_device(req.device_name, request)
         success = await device.stop()
-        return BaseResponse(
-            message="设备停止成功!" if success else "设备停止失败!",
-            data=success
-        )
+        if success:
+            return BaseResponse(message="设备停止成功!", data=True)
+        else:
+            return BaseResponse(code=500, message="设备停止失败!", data=False)
     except KeyError:
         return BaseResponse(code=404, message=f"设备 {req.device_name} 不存在!", data=False)
     except Exception as e:
