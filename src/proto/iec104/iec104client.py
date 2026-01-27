@@ -1,7 +1,8 @@
-from typing import List, Optional, Callable
+from typing import List, Optional, Callable, Dict, Any
 import c104
 import time
 from src.proto.iec104.log import log
+from src.device.core.message_capture import MessageCapture
 
 
 class IEC104Client:
@@ -28,6 +29,36 @@ class IEC104Client:
         self.points: List[c104.Point] = []
         self._on_data_received: Optional[Callable] = None
         self._on_command_response: Optional[Callable] = None
+
+        # 报文捕获器
+        self.message_capture = MessageCapture()
+        
+        # 注册原始报文回调
+        if self.connection:
+             self.connection.on_receive_raw(callable=self._on_receive_raw)
+             self.connection.on_send_raw(callable=self._on_send_raw)
+
+    def _on_receive_raw(self, connection: c104.Connection, data: bytes) -> None:
+        """接收原始报文回调"""
+        try:
+             self.message_capture.add_rx(data)
+        except Exception as e:
+            log.error(f"记录接收报文失败: {e}")
+
+    def _on_send_raw(self, connection: c104.Connection, data: bytes) -> None:
+        """发送原始报文回调"""
+        try:
+            self.message_capture.add_tx(data)
+        except Exception as e:
+            log.error(f"记录发送报文失败: {e}")
+
+    def get_captured_messages(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """获取捕获的报文列表"""
+        return self.message_capture.get_messages(limit)
+
+    def clear_captured_messages(self) -> None:
+        """清空捕获的报文"""
+        self.message_capture.clear()
 
     def connect(self, timeout: int = 10) -> bool:
         """
