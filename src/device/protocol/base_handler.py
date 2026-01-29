@@ -69,7 +69,7 @@ class ProtocolHandler(ABC):
 
     @abstractmethod
     def read_value(self, point: BasePoint) -> Any:
-        """读取测点值
+        """读取测点值 (同步接口)
         
         Args:
             point: 测点对象
@@ -79,9 +79,18 @@ class ProtocolHandler(ABC):
         """
         pass
 
+    async def read_value_async(self, point: BasePoint) -> Any:
+        """读取测点值 (异步接口)
+        
+        默认实现使用 run_in_executor 包装同步调用，子类可覆盖以提供原生异步实现
+        """
+        import asyncio
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.read_value, point)
+
     @abstractmethod
     def write_value(self, point: BasePoint, value: Any) -> bool:
-        """写入测点值
+        """写入测点值 (同步接口)
         
         Args:
             point: 测点对象
@@ -91,6 +100,15 @@ class ProtocolHandler(ABC):
             bool: 写入是否成功
         """
         pass
+
+    async def write_value_async(self, point: BasePoint, value: Any) -> bool:
+        """写入测点值 (异步接口)
+        
+        默认实现使用 run_in_executor 包装同步调用，子类可覆盖以提供原生异步实现
+        """
+        import asyncio
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.write_value, point, value)
 
     @abstractmethod
     def add_points(self, points: List[BasePoint]) -> None:

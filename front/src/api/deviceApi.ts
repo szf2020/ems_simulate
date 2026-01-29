@@ -373,3 +373,56 @@ export async function clearMessages(deviceName: string): Promise<boolean> {
         return false;
     }
 }
+
+// ===== 动态测点/从机管理 =====
+
+export interface PointCreateData {
+    frame_type: number;  // 0=遥测, 1=遥信, 2=遥控, 3=遥调
+    code: string;
+    name: string;
+    rtu_addr: number;
+    reg_addr: string;
+    func_code: number;
+    decode_code: string;
+    mul_coe: number;
+    add_coe: number;
+}
+
+export async function addPoint(deviceName: string, pointData: PointCreateData): Promise<boolean> {
+    try {
+        const data = await requestApi('/device/add_point', 'post', {
+            device_name: deviceName,
+            ...pointData,
+        });
+        return data;
+    } catch (error) {
+        console.error('Error adding point:', error);
+        return false;
+    }
+}
+
+export async function deletePoint(deviceName: string, pointCode: string): Promise<boolean> {
+    try {
+        const data = await requestApi('/device/delete_point', 'post', {
+            device_name: deviceName,
+            point_code: pointCode,
+        });
+        return data;
+    } catch (error) {
+        console.error('Error deleting point:', error);
+        return false;
+    }
+}
+
+export async function addSlave(deviceName: string, slaveId: number): Promise<boolean> {
+    try {
+        const data = await requestApi('/device/add_slave', 'post', {
+            device_name: deviceName,
+            slave_id: slaveId,
+        });
+        return data;
+    } catch (error) {
+        console.error('Error adding slave:', error);
+        return false;
+    }
+}

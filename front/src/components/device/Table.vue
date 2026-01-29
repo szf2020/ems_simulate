@@ -132,16 +132,16 @@
         </template>
       </el-table-column>
 
-      <!-- 操作列：仅客户端设备显示 -->
+      <!-- 操作列：客户端显示读取/写入，所有设备显示删除 -->
       <el-table-column
-        v-if="isClientDevice"
         label="操作"
-        width="180"
+        :width="isClientDevice ? 240 : 100"
         fixed="right"
       >
         <template #default="scope">
           <div class="action-buttons">
             <el-button
+              v-if="isClientDevice"
               type="primary"
               size="small"
               :icon="Download"
@@ -151,7 +151,7 @@
               读取
             </el-button>
             <el-button
-              v-if="[PointType.YK, PointType.YT].includes(getPointType(scope.row['帧类型']))"
+              v-if="isClientDevice && [PointType.YK, PointType.YT].includes(getPointType(scope.row['帧类型']))"
               type="success"
               size="small"
               :icon="Edit"
@@ -159,6 +159,23 @@
             >
               写入
             </el-button>
+            <el-popconfirm
+              title="确定要删除这个测点吗？"
+              confirm-button-text="删除"
+              cancel-button-text="取消"
+              @confirm="handleDeletePoint(scope.row['测点编码'])"
+            >
+              <template #reference>
+                <el-button
+                  type="danger"
+                  size="small"
+                  :icon="Delete"
+                  :loading="deletingPoints[scope.row['测点编码']]"
+                >
+                  删除
+                </el-button>
+              </template>
+            </el-popconfirm>
           </div>
         </template>
       </el-table-column>
@@ -191,10 +208,10 @@
 <script setup lang="ts">
 import { ref, computed, reactive, type PropType } from 'vue'
 import { useRoute } from "vue-router"
-import { QuestionFilled, Download, Edit } from "@element-plus/icons-vue"
+import { QuestionFilled, Download, Edit, Delete } from "@element-plus/icons-vue"
 import { ElMessage } from 'element-plus'
 import { getPointType, PointType } from '@/types/point'
-import { readSinglePoint } from '@/api/deviceApi'
+import { readSinglePoint, deletePoint } from '@/api/deviceApi'
 
 import SingleRegister from '../register/SingleRegister.vue'
 import LongRegister from '../register/LongRegister.vue'
@@ -238,6 +255,7 @@ const isClientDevice = computed(() => {
 });
 
 const readingPoints = reactive<Record<string, boolean>>({});
+const deletingPoints = reactive<Record<string, boolean>>({});
 const showHexAddress = ref(false);
 
 const hiddenColumns = computed(() => {
@@ -255,8 +273,36 @@ const hiddenColumns = computed(() => {
 const filteredTableHeader = computed(() => props.tableHeader.filter(h => !hiddenColumns.value.includes(h)));
 const filteredTableHeaderWithoutAddress = computed(() => filteredTableHeader.value);
 
-const baseWidths = [80, 100, 100, 200, 200, 150, 150, 120, 100, 100, 100];
-const addressFilteredWidthList = computed(() => baseWidths.slice(0, filteredTableHeaderWithoutAddress.value.length));
+// 基于列名的宽度映射，根据内容特点设置合适宽度
+const columnWidthMap: Record<string, number> = {
+  '测点编码': 150,
+  '测点名称': 200,
+  '寄存器值': 120,
+  '真实值': 120,
+  '乘法系数': 100,
+  '加法系数': 100,
+  '位': 60,
+  '功能码': 80,
+  '解析码': 90,
+  '帧类型': 80,
+  // IEC104 协议特有列
+  '类型标识': 100,
+  '传送原因': 100,
+  '公共地址': 100,
+  '信息体地址': 120,
+  // DLT645 协议特有列
+  '数据标识': 120,
+  '数据长度': 80,
+  // 通用默认
+  'default': 100
+};
+
+// 根据当前可见列动态生成宽度列表
+const addressFilteredWidthList = computed(() => {
+  return filteredTableHeaderWithoutAddress.value.map(header => {
+    return columnWidthMap[header] || columnWidthMap['default'];
+  });
+});
 
 const getRowKey = (row: any) => row["测点编码"];
 const handleExpand = (row: any, rows: any[]) => {
@@ -347,6 +393,22 @@ const handleWriteSuccess = () => {
   emit('refresh');
 };
 
+const handleDeletePoint = async (pointCode: string) => {
+  deletingPoints[pointCode] = true;
+  try {
+    const success = await deletePoint(deviceName.value, pointCode);
+    if (success) {
+      ElMessage.success('删除成功');
+      emit('refresh');
+    } else {
+      ElMessage.error('删除失败');
+    }
+  } catch (e) {
+    ElMessage.error('删除失败');
+  } finally {
+    deletingPoints[pointCode] = false;
+  }
+};
 const shouldShowTooltip = (header: string) => {
   if (['乘法系数', '加法系数'].includes(header)) return true;
   if (!isModbus.value) return false;

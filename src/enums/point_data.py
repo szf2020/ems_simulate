@@ -48,6 +48,13 @@ from src.enums.points.protocol_strategy import (
     IEC61850Strategy,
     get_protocol_strategy,
 )
+from src.enums.points.protocol_config import (
+    ModbusConfig,
+    IEC104Config,
+    DLT645Config,
+    get_default_protocol_config,
+    create_protocol_config,
+)
 
 
 __all__ = [
@@ -64,5 +71,10 @@ __all__ = [
     "DLT645Strategy",
     "IEC61850Strategy",
     "get_protocol_strategy",
+    "ModbusConfig",
+    "IEC104Config",
+    "DLT645Config",
+    "get_default_protocol_config",
+    "create_protocol_config",
     "decimal_to_hex_formatted",
 ]

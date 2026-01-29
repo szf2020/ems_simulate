@@ -15,8 +15,9 @@ from src.web.schemas import (
     SimulateMethodSetRequest, SimulateStepSetRequest, SimulateRangeSetRequest,
     DeviceStartRequest, DeviceStopRequest, DeviceResetRequest,
     PointLimitGetRequest, CurrentTableRequest, BaseResponse,
-    MessageListRequest
+    MessageListRequest, PointCreateRequest, PointDeleteRequest, SlaveAddRequest
 )
+from src.data.dao.channel_dao import ChannelDao
 
 log = get_logger()
 
@@ -59,6 +60,11 @@ async def get_device_info(req: DeviceInfoRequest, request: Request):
             "stopbits": getattr(device, 'stopbits', 1),
             "parity": getattr(device, 'parity', 'E'),
         }
+        
+        # 获取 conn_type（服务端/客户端判断需要）
+        channels = ChannelDao.get_all_channels()
+        channel = next((c for c in channels if c.get("name") == req.device_name), None)
+        info_dict["conn_type"] = channel.get("conn_type", 2) if channel else 2
         
         # 使用统一接口获取协议运行状态
         info_dict["server_status"] = device.is_protocol_running()
@@ -382,7 +388,9 @@ async def manual_read(req: DeviceInfoRequest, request: Request):
 async def read_single_point(req: PointInfoRequest, request: Request):
     try:
         device = get_device(req.device_name, request)
-        value = device.read_single_point(req.point_code)
+        # 使用异步方法读取，避免阻塞事件循环
+        value = await device.read_single_point_async(req.point_code)
+        
         if value is not None:
             return BaseResponse(message="读取成功!", data={"value": value})
         else:
@@ -425,3 +433,77 @@ async def clear_messages(req: DeviceInfoRequest, request: Request):
     except Exception as e:
         log.error(f"清空报文历史失败: {e}")
         return BaseResponse(code=500, message=f"清空报文历史失败: {e}!", data=False)
+
+
+# ===== 动态测点/从机管理接口 =====
+
+# 添加测点
+@device_router.post("/add_point", response_model=BaseResponse)
+async def add_point(req: PointCreateRequest, request: Request):
+    try:
+        device = get_device(req.device_name, request)
+        # 获取设备的 channel_id
+        channel = ChannelDao.get_channel_by_code(req.device_name)
+        if not channel:
+            # 尝试通过设备名称查找
+            channels = ChannelDao.get_all_channels()
+            channel = next((c for c in channels if c["name"] == req.device_name), None)
+        
+        if not channel:
+            return BaseResponse(code=404, message=f"找不到设备 {req.device_name} 的通道信息!", data=False)
+        
+        channel_id = channel["id"]
+        point_data = {
+            "code": req.code,
+            "name": req.name,
+            "rtu_addr": req.rtu_addr,
+            "reg_addr": req.reg_addr,
+            "func_code": req.func_code,
+            "decode_code": req.decode_code,
+            "mul_coe": req.mul_coe,
+            "add_coe": req.add_coe,
+        }
+        success = device.add_point_dynamic(channel_id, req.frame_type, point_data)
+        if success:
+            return BaseResponse(message="添加测点成功!", data=True)
+        else:
+            return BaseResponse(code=500, message="添加测点失败!", data=False)
+    except KeyError:
+        return BaseResponse(code=404, message=f"设备 {req.device_name} 不存在!", data=False)
+    except Exception as e:
+        log.error(f"添加测点失败: {e}")
+        return BaseResponse(code=500, message=f"添加测点失败: {e}!", data=False)
+
+
+# 删除测点
+@device_router.post("/delete_point", response_model=BaseResponse)
+async def delete_point(req: PointDeleteRequest, request: Request):
+    try:
+        device = get_device(req.device_name, request)
+        success = device.delete_point_dynamic(req.point_code)
+        if success:
+            return BaseResponse(message="删除测点成功!", data=True)
+        else:
+            return BaseResponse(code=500, message="删除测点失败!", data=False)
+    except KeyError:
+        return BaseResponse(code=404, message=f"设备 {req.device_name} 不存在!", data=False)
+    except Exception as e:
+        log.error(f"删除测点失败: {e}")
+        return BaseResponse(code=500, message=f"删除测点失败: {e}!", data=False)
+
+
+# 添加从机
+@device_router.post("/add_slave", response_model=BaseResponse)
+async def add_slave(req: SlaveAddRequest, request: Request):
+    try:
+        device = get_device(req.device_name, request)
+        success = device.add_slave_dynamic(req.slave_id)
+        if success:
+            return BaseResponse(message="添加从机成功!", data=True)
+        else:
+            return BaseResponse(code=400, message="添加从机失败，请检查从机地址是否有效或已存在!", data=False)
+    except KeyError:
+        return BaseResponse(code=404, message=f"设备 {req.device_name} 不存在!", data=False)
+    except Exception as e:
+        log.error(f"添加从机失败: {e}")
+        return BaseResponse(code=500, message=f"添加从机失败: {e}!", data=False)

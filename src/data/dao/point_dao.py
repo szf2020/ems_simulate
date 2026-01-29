@@ -13,6 +13,34 @@ from src.data.log import log
 from src.data.controller.db import local_session
 
 
+def _format_reg_addr(addr: str) -> str:
+    """将寄存器地址格式化为 0x 格式
+    
+    支持输入格式:
+    - 纯数字: "0", "100" -> "0x0000", "0x0064"
+    - 十六进制: "0x10", "0x0100" -> 保持原样或补齐
+    
+    Returns:
+        格式化后的地址，如 "0x0000"
+    """
+    addr = str(addr).strip()
+    
+    if addr.startswith("0x") or addr.startswith("0X"):
+        # 已经是十六进制格式，补齐到4位
+        hex_digits = addr[2:]
+        if len(hex_digits) < 4:
+            hex_digits = hex_digits.zfill(4)
+        return "0x" + hex_digits.upper()
+    else:
+        # 纯数字，转换为十六进制
+        try:
+            decimal_value = int(addr)
+            return "0x" + format(decimal_value, '04X')
+        except ValueError:
+            # 无法解析，原样返回（让后续验证处理）
+            return addr
+
+
 class PointDao:
     """测点数据访问对象"""
 
@@ -274,4 +302,152 @@ class PointDao:
             return total_deleted
         except Exception as e:
             log.error(f"删除通道测点失败: {str(e)}")
+            raise e
+
+    # ===== 动态创建测点 =====
+    @classmethod
+    def create_yc(cls, channel_id: int, point_data: dict) -> PointYcDict:
+        """创建遥测点"""
+        try:
+            with local_session() as session:
+                with session.begin():
+                    point = PointYc(
+                        channel_id=channel_id,
+                        code=point_data["code"],
+                        name=point_data["name"],
+                        rtu_addr=point_data.get("rtu_addr", 1),
+                        reg_addr=_format_reg_addr(point_data["reg_addr"]),
+                        func_code=point_data.get("func_code", 3),
+                        decode_code=point_data.get("decode_code", "0x41"),
+                        mul_coe=point_data.get("mul_coe", 1.0),
+                        add_coe=point_data.get("add_coe", 0.0),
+                        max_limit=point_data.get("max_limit", 9999999),
+                        min_limit=point_data.get("min_limit", -9999999),
+                        enable=True
+                    )
+                    session.add(point)
+                    session.flush()
+                    return point.to_dict()
+        except Exception as e:
+            log.error(f"创建遥测点失败: {str(e)}")
+            raise e
+
+    @classmethod
+    def create_yx(cls, channel_id: int, point_data: dict) -> PointYxDict:
+        """创建遥信点"""
+        try:
+            with local_session() as session:
+                with session.begin():
+                    point = PointYx(
+                        channel_id=channel_id,
+                        code=point_data["code"],
+                        name=point_data["name"],
+                        rtu_addr=point_data.get("rtu_addr", 1),
+                        reg_addr=_format_reg_addr(point_data["reg_addr"]),
+                        func_code=point_data.get("func_code", 2),
+                        decode_code=point_data.get("decode_code", "0x10"),
+                        enable=True
+                    )
+                    session.add(point)
+                    session.flush()
+                    return point.to_dict()
+        except Exception as e:
+            log.error(f"创建遥信点失败: {str(e)}")
+            raise e
+
+    @classmethod
+    def create_yk(cls, channel_id: int, point_data: dict) -> PointYkDict:
+        """创建遥控点"""
+        try:
+            with local_session() as session:
+                with session.begin():
+                    point = PointYk(
+                        channel_id=channel_id,
+                        code=point_data["code"],
+                        name=point_data["name"],
+                        rtu_addr=point_data.get("rtu_addr", 1),
+                        reg_addr=_format_reg_addr(point_data["reg_addr"]),
+                        func_code=point_data.get("func_code", 5),
+                        decode_code=point_data.get("decode_code", "0x10"),
+                        enable=True
+                    )
+                    session.add(point)
+                    session.flush()
+                    return point.to_dict()
+        except Exception as e:
+            log.error(f"创建遥控点失败: {str(e)}")
+            raise e
+
+    @classmethod
+    def create_yt(cls, channel_id: int, point_data: dict) -> PointYtDict:
+        """创建遥调点"""
+        try:
+            with local_session() as session:
+                with session.begin():
+                    point = PointYt(
+                        channel_id=channel_id,
+                        code=point_data["code"],
+                        name=point_data["name"],
+                        rtu_addr=point_data.get("rtu_addr", 1),
+                        reg_addr=_format_reg_addr(point_data["reg_addr"]),
+                        func_code=point_data.get("func_code", 6),
+                        decode_code=point_data.get("decode_code", "0x41"),
+                        mul_coe=point_data.get("mul_coe", 1.0),
+                        add_coe=point_data.get("add_coe", 0.0),
+                        enable=True
+                    )
+                    session.add(point)
+                    session.flush()
+                    return point.to_dict()
+        except Exception as e:
+            log.error(f"创建遥调点失败: {str(e)}")
+            raise e
+
+    @classmethod
+    def create_point(cls, channel_id: int, frame_type: int, point_data: dict) -> dict:
+        """根据类型创建测点
+        
+        Args:
+            channel_id: 通道ID
+            frame_type: 测点类型 (0=遥测, 1=遥信, 2=遥控, 3=遥调)
+            point_data: 测点数据
+            
+        Returns:
+            创建的测点字典
+        """
+        creators = {
+            0: cls.create_yc,
+            1: cls.create_yx,
+            2: cls.create_yk,
+            3: cls.create_yt
+        }
+        creator = creators.get(frame_type)
+        if not creator:
+            raise ValueError(f"无效的测点类型: {frame_type}")
+        result = creator(channel_id, point_data)
+        result["frame_type"] = frame_type
+        return result
+
+    @classmethod
+    def delete_point_by_code(cls, code: str) -> bool:
+        """根据编码删除测点
+        
+        Args:
+            code: 测点编码
+            
+        Returns:
+            是否删除成功
+        """
+        try:
+            with local_session() as session:
+                with session.begin():
+                    for model in [PointYc, PointYx, PointYk, PointYt]:
+                        deleted = session.query(model).where(model.code == code).delete()
+                        if deleted > 0:
+                            log.info(f"已删除测点: {code}")
+                            return True
+                    log.warning(f"未找到测点: {code}")
+                    return False
+        except Exception as e:
+            log.error(f"删除测点失败: {str(e)}")
             raise e

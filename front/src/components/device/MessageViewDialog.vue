@@ -34,20 +34,20 @@
       class="message-table"
       :row-class-name="getRowClass"
     >
-      <el-table-column prop="formatted_time" label="时间" width="120" />
-      <el-table-column prop="direction" label="方向" width="80" align="center">
+      <el-table-column prop="formatted_time" label="时间" width="120" header-align="center" />
+      <el-table-column prop="direction" label="方向" width="80" align="center" header-align="center">
         <template #default="{ row }">
           <el-tag :type="row.direction === 'TX' ? 'primary' : 'success'" size="small">
             {{ row.direction === 'TX' ? '发送' : '接收' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="length" label="长度" width="70" align="center">
+      <el-table-column prop="length" label="长度" width="70" align="center" header-align="center">
         <template #default="{ row }">
           <span class="length-badge">{{ row.length }}</span>
         </template>
       </el-table-column>
-      <el-table-column prop="hex_data" label="数据 (HEX)" min-width="400">
+      <el-table-column prop="hex_data" label="数据 (HEX)" min-width="400" align="center" header-align="center">
         <template #default="{ row }">
           <span class="hex-data" :title="row.hex_data">{{ row.hex_data }}</span>
         </template>

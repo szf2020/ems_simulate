@@ -294,6 +294,35 @@ class Device:
         
         return None
 
+    async def read_single_point_async(self, point_code: str) -> Optional[float]:
+        """异步读取单个测点的值
+        
+        Args:
+            point_code: 测点编码
+            
+        Returns:
+            Optional[float]: 读取成功返回值，失败返回None
+        """
+        point = self.point_manager.get_point_by_code(point_code)
+        if not point:
+            if self.log:
+                self.log.error(f"{self.name} 未找到测点: {point_code}")
+            return None
+        
+        if not self.protocol_handler:
+            return None
+        
+        try:
+            value = await self.protocol_handler.read_value_async(point)
+            if value is not None:
+                point.value = value
+                return point.real_value if hasattr(point, 'real_value') else float(value)
+        except Exception as e:
+            if self.log:
+                self.log.error(f"异步读取测点 {point_code} 失败: {e}")
+        
+        return None
+
     # ===== 测点操作 =====
 
     def editPointData(self, point_code: str, real_value: float) -> bool:
@@ -373,6 +402,179 @@ class Device:
     def resetPointValues(self) -> None:
         """重置所有测点值"""
         self.point_manager.reset_all_values()
+
+    # ===== 动态测点/从机管理 =====
+
+    def add_point_dynamic(self, channel_id: int, frame_type: int, point_data: dict) -> bool:
+        """动态添加测点
+        
+        Args:
+            channel_id: 通道ID
+            frame_type: 测点类型 (0=遥测, 1=遥信, 2=遥控, 3=遥调)
+            point_data: 测点数据
+            
+        Returns:
+            是否添加成功
+        """
+        try:
+            from src.data.dao.point_dao import PointDao
+            from src.data.service.yc_service import YcService
+            from src.data.service.yx_service import YxService
+            from src.data.service.yk_service import YkService
+            from src.data.service.yt_service import YtService
+            
+            # 1. 写入数据库
+            db_point = PointDao.create_point(channel_id, frame_type, point_data)
+            if not db_point:
+                return False
+            
+            # 2. 转换为内存对象
+            point: BasePoint
+            slave_id = point_data.get("rtu_addr", 1)
+            
+            if frame_type == 0:  # 遥测
+                point = YcService._convert_to_yc(db_point, self.protocol_type)
+            elif frame_type == 1:  # 遥信
+                point = YxService._convert_to_yx(db_point, self.protocol_type)
+            elif frame_type == 2:  # 遥控
+                point = YkService._convert_to_yk(db_point, self.protocol_type)
+            elif frame_type == 3:  # 遥调
+                point = YtService._convert_to_yt(db_point, self.protocol_type)
+            else:
+                return False
+            
+            # 3. 添加到测点管理器
+            self.point_manager.add_point(slave_id, point)
+            
+            # 4. 添加到模拟控制器
+            self.simulation_controller.add_point(point, SimulateMethod.Random, 1)
+            self.simulation_controller.set_point_status(point, True)
+            
+            # 5. 添加到协议处理器
+            if self.protocol_handler:
+                # IEC104 协议需要重新初始化
+                if self.protocol_type in [ProtocolType.Iec104Server, ProtocolType.Iec104Client]:
+                    self._reinit_protocol_for_iec104()
+                else:
+                    self.protocol_handler.add_points([point])
+            
+            if self.log:
+                self.log.info(f"动态添加测点成功: {point_data.get('code')}")
+            return True
+            
+        except Exception as e:
+            if self.log:
+                self.log.error(f"动态添加测点失败: {e}")
+            return False
+
+    def delete_point_dynamic(self, point_code: str) -> bool:
+        """动态删除测点
+        
+        Args:
+            point_code: 测点编码
+            
+        Returns:
+            是否删除成功
+        """
+        try:
+            from src.data.dao.point_dao import PointDao
+            
+            # 1. 从数据库删除
+            if not PointDao.delete_point_by_code(point_code):
+                return False
+            
+            # 2. 从测点管理器删除
+            point = self.point_manager.get_point_by_code(point_code)
+            if point:
+                # 从对应的列表中移除
+                slave_id = point.rtu_addr
+                if isinstance(point, Yc) and slave_id in self.point_manager.yc_dict:
+                    self.point_manager.yc_dict[slave_id] = [
+                        p for p in self.point_manager.yc_dict[slave_id] if p.code != point_code
+                    ]
+                elif isinstance(point, Yx) and slave_id in self.point_manager.yx_dict:
+                    self.point_manager.yx_dict[slave_id] = [
+                        p for p in self.point_manager.yx_dict[slave_id] if p.code != point_code
+                    ]
+                elif isinstance(point, Yk) and slave_id in self.point_manager.yk_dict:
+                    self.point_manager.yk_dict[slave_id] = [
+                        p for p in self.point_manager.yk_dict[slave_id] if p.code != point_code
+                    ]
+                elif isinstance(point, Yt) and slave_id in self.point_manager.yt_dict:
+                    self.point_manager.yt_dict[slave_id] = [
+                        p for p in self.point_manager.yt_dict[slave_id] if p.code != point_code
+                    ]
+                
+                # 从 code_map 移除
+                if point_code in self.point_manager.code_map:
+                    del self.point_manager.code_map[point_code]
+            
+            # 3. IEC104 协议需要重新初始化（如果需要）
+            if self.protocol_type in [ProtocolType.Iec104Server, ProtocolType.Iec104Client]:
+                self._reinit_protocol_for_iec104()
+            
+            if self.log:
+                self.log.info(f"动态删除测点成功: {point_code}")
+            return True
+            
+        except Exception as e:
+            if self.log:
+                self.log.error(f"动态删除测点失败: {e}")
+            return False
+
+    def add_slave_dynamic(self, slave_id: int) -> bool:
+        """动态添加从机
+        
+        Args:
+            slave_id: 从机地址 (1-255)
+            
+        Returns:
+            是否添加成功
+        """
+        try:
+            if slave_id < 1 or slave_id > 255:
+                if self.log:
+                    self.log.error(f"无效的从机地址: {slave_id}")
+                return False
+            
+            if slave_id in self.point_manager.slave_id_list:
+                if self.log:
+                    self.log.warning(f"从机 {slave_id} 已存在")
+                return False
+            
+            # 添加到从机列表
+            self.point_manager.slave_id_list.append(slave_id)
+            self.point_manager.slave_id_list.sort()
+            
+            if self.log:
+                self.log.info(f"动态添加从机成功: {slave_id}")
+            return True
+            
+        except Exception as e:
+            if self.log:
+                self.log.error(f"动态添加从机失败: {e}")
+            return False
+
+    def _reinit_protocol_for_iec104(self) -> None:
+        """重新初始化 IEC104 协议处理器"""
+        if self.protocol_handler:
+            # 重新创建处理器并初始化
+            self.protocol_handler = self._create_protocol_handler()
+            config = {
+                "ip": self.ip,
+                "port": self.port,
+                "serial_port": self.serial_port,
+                "baudrate": self.baudrate,
+                "databits": self.databits,
+                "stopbits": self.stopbits,
+                "parity": self.parity,
+                "slave_id_list": self.slave_id_list,
+                "protocol_type": self.protocol_type,
+                "meter_address": self.meter_address,
+            }
+            self.protocol_handler.initialize(config)
+            all_points = self.point_manager.get_all_points()
+            self.protocol_handler.add_points(all_points)
 
     # ===== 模拟控制 =====
 
@@ -465,9 +667,60 @@ class Device:
         page_size: Optional[int] = 10,
         point_types: Optional[List[int]] = None,
     ) -> tuple[List[List[str]], int]:
+        # 对于 IEC104 客户端，在获取表格数据前同步 c104.Point 的值到内部点
+        if self.protocol_type == ProtocolType.Iec104Client and self.protocol_handler:
+            self._sync_iec104_client_values(slave_id)
+        
         return self.data_exporter.get_table_data(
             slave_id, name, page_index, page_size, point_types
         )
+
+    def _sync_iec104_client_values(self, slave_id: int) -> None:
+        """同步 IEC104 客户端从服务端接收的值到内部测点
+        
+        当服务端主动上报数据时，c104.Point 对象的 .value 会自动更新，
+        此方法将这些值同步到应用内部的测点对象。
+        """
+        try:
+            from src.device.protocol.iec104_handler import IEC104ClientHandler
+            from src.enums.point_data import Yc
+            
+            if not isinstance(self.protocol_handler, IEC104ClientHandler):
+                return
+            
+            if not self.protocol_handler._is_running:
+                return
+            
+            client = self.protocol_handler._client
+            if not client or not client.station:
+                return
+            
+            # 获取该从机下的所有测点 (yc, yx, yt, yk)
+            yc_list, yx_list, yt_list, yk_list = self.point_manager.get_points_by_slave(slave_id)
+            all_points = yc_list + yx_list + yt_list + yk_list
+            
+            for point in all_points:
+                try:
+                    # 直接从 c104.Point 对象读取值（服务端上报时自动更新）
+                    c104_point = client.station.get_point(io_address=point.address)
+                    if c104_point is None:
+                        continue
+                    
+                    real_val = c104_point.value
+                    if real_val is not None:
+                        # 遥测点需要反向换算
+                        if isinstance(point, Yc):
+                            try:
+                                raw_val = int((float(real_val) - point.add_coe) / point.mul_coe)
+                                point.value = raw_val
+                            except (ZeroDivisionError, TypeError):
+                                pass
+                        else:
+                            point.value = real_val
+                except Exception as e:
+                    self.log.debug(f"同步测点 {point.code} 失败: {e}")
+        except Exception as e:
+            self.log.error(f"IEC104 客户端数据同步失败: {e}")
 
     # ===== 报文捕获 =====
 

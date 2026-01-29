@@ -1,6 +1,16 @@
 def process_hex_address(address: str) -> str:
+    """处理地址格式，支持十六进制和十进制输入
+    
+    Args:
+        address: 地址字符串，可以是 "0x0000" 格式或纯数字 "0", "100"
+        
+    Returns:
+        格式化后的4位十六进制地址，如 "0x0000"
+    """
+    address = str(address).strip()
+    
     # 检查地址是否以'0x'开头
-    if address.startswith("0x"):
+    if address.startswith("0x") or address.startswith("0X"):
         # 去掉'0x'前缀
         hex_digits = address[2:]
         # 计算需要补齐的零的个数
@@ -8,13 +18,17 @@ def process_hex_address(address: str) -> str:
         # 如果需要补齐，则在前面添加相应数量的零
         if padding_zeros > 0:
             hex_digits = "0" * padding_zeros + hex_digits
-            # 返回处理后的地址
-        return "0x" + hex_digits
+        return "0x" + hex_digits.upper()
     else:
-        # 如果地址不是以'0x'开头，则抛出异常
-        raise ValueError(
-            f"f{address}, Invalid hex address format. It should start with '0x'."
-        )
+        # 尝试作为十进制数字处理
+        try:
+            decimal_value = int(address)
+            return "0x" + format(decimal_value, '04X')
+        except ValueError:
+            # 如果无法解析，抛出异常
+            raise ValueError(
+                f"{address}, Invalid address format. Should be '0x' hex or decimal number."
+            )
 
 
 def decimal_to_hex(decimal_number: int, length=4) -> str:

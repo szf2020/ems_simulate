@@ -1,6 +1,6 @@
 <template>
   <div class="slave-container">
-    <el-tabs v-model="activeName" class="modern-tabs" @tab-click="handleClick">
+    <el-tabs v-model="activeName" class="modern-tabs" @tab-click="handleClick" :before-leave="beforeLeave">
       <el-tab-pane
         v-for="slave in slaveIdList"
         :key="slave"
@@ -27,7 +27,10 @@
             <el-button class="modern-btn reset-btn" @click="resetPoint" :icon="Refresh">
               重置测点值
             </el-button>
-            <div class="auto-read-control">
+            <el-button class="modern-btn add-btn" @click="showAddPointDialog = true" :icon="Plus">
+              添加测点
+            </el-button>
+            <div v-if="needsAutoReadControls" class="auto-read-control">
               <span class="auto-read-label">自动读取</span>
               <el-switch
                 v-model="isAutoRead"
@@ -64,7 +67,34 @@
           @refresh="handleTableRefresh"
         />
       </el-tab-pane>
+      
+      <!-- 添加从机按钮（作为特殊 tab） -->
+      <el-tab-pane name="add" :closable="false">
+        <template #label>
+          <span class="add-slave-tab">
+            <el-icon><Plus /></el-icon>
+            添加从机
+          </span>
+        </template>
+      </el-tab-pane>
     </el-tabs>
+    
+    <!-- 添加测点对话框 -->
+    <AddPointDialog
+      v-model="showAddPointDialog"
+      :deviceName="routeName"
+      :slaveIdList="slaveIdList"
+      :currentSlaveId="currentSlaveId"
+      @success="handlePointAdded"
+    />
+    
+    <!-- 添加从机对话框 -->
+    <AddSlaveDialog
+      v-model="showAddSlaveDialog"
+      :deviceName="routeName"
+      :existingSlaves="slaveIdList"
+      @success="handleSlaveAdded"
+    />
   </div>
 </template>
 
@@ -72,9 +102,11 @@
 import { ref, onMounted, watch, onUnmounted, computed } from "vue";
 import { useRoute } from "vue-router";
 import { ElMessage, type TabsPaneContext } from "element-plus";
-import { Search, Refresh, Download } from "@element-plus/icons-vue";
+import { Search, Refresh, Download, Plus } from "@element-plus/icons-vue";
 import { getSlaveIdList, getDeviceTable, resetPointData, getDeviceInfo, getAutoReadStatus, startAutoRead, stopAutoRead, manualRead } from "@/api/deviceApi";
 import DeviceTable from "./Table.vue";
+import AddPointDialog from "./AddPointDialog.vue";
+import AddSlaveDialog from "./AddSlaveDialog.vue";
 
 const route = useRoute();
 const routeName = ref(route.name as string);
@@ -88,7 +120,24 @@ const pageIndex = ref(1);
 const total = ref(0);
 const activeFilters = ref<Record<string, number>>({});
 const protocolType = ref<number | string>(1);
+const connType = ref<number>(2); // 默认为服务端
 const isAutoRead = ref<boolean>(false);
+
+// 判断是否需要显示自动读取控件 
+// Modbus 客户端/主站 (conn_type 0 或 1) 需要主动轮询，需要显示
+// IEC104 客户端虽然是 conn_type=1，但数据是服务端推送的，不需要显示
+// 注：表格每秒刷新对所有设备都生效，这里只控制自动读取按钮的显示
+const needsAutoReadControls = computed(() => {
+  // IEC104 协议类型不需要自动读取控件（数据由服务端推送）
+  const protocolStr = String(protocolType.value);
+  if (protocolStr === 'Iec104Client' || protocolStr === 'Iec104Server') {
+    return false;
+  }
+  // 只有客户端/主站模式 (conn_type 0 或 1) 显示自动读取控件
+  return connType.value === 0 || connType.value === 1;
+});
+const showAddPointDialog = ref<boolean>(false);
+const showAddSlaveDialog = ref<boolean>(false);
 
 const pointTypes = computed<number[]>(() => Object.values(activeFilters.value).flat() as number[]);
 
@@ -103,8 +152,12 @@ const handleTableRefresh = () => handleSearch(currentSlaveId.value);
 const fetchSlaveList = async () => {
   try {
     const deviceInfo = await getDeviceInfo(routeName.value);
-    if (deviceInfo) protocolType.value = deviceInfo.get("type") ?? 1;
-  } catch (e) { console.warn("协议类型获取失败"); }
+    if (deviceInfo) {
+      protocolType.value = deviceInfo.get("type") ?? 1;
+      // 确保 conn_type 是数字类型
+      connType.value = Number(deviceInfo.get("conn_type") ?? 2);
+    }
+  } catch (e) { console.warn("设备信息获取失败"); }
   
   slaveIdList.value = await getSlaveIdList(routeName.value);
   if (slaveIdList.value.length > 0) {
@@ -131,7 +184,20 @@ const fetchAllDeviceTables = async () => {
   }
 };
 
+// 阻止切换到 "add" tab
+const beforeLeave = (activeName: string, oldActiveName: string) => {
+  if (activeName === "add") {
+    showAddSlaveDialog.value = true;
+    return false; // 阻止切换
+  }
+  return true;
+};
+
 const handleClick = (tab: TabsPaneContext) => {
+  if (tab.paneName === "add") {
+    return; // beforeLeave 已处理
+  }
+  
   if (tab.index !== undefined) {
     currentSlaveId.value = slaveIdList.value[parseInt(tab.index)];
     fetchDeviceTable(routeName.value, currentSlaveId.value, "", pageIndex.value, pageSize.value);
@@ -213,6 +279,15 @@ onMounted(async () => {
   // 始终开启表格刷新以支持主动上报协议的数据显示
   startAutoRefresh();
 });
+
+const handlePointAdded = () => {
+  fetchDeviceTable(routeName.value, currentSlaveId.value, searchQuery.value[currentSlaveId.value] || "", pageIndex.value, pageSize.value);
+};
+
+const handleSlaveAdded = async () => {
+  await fetchSlaveList();
+};
+
 onUnmounted(() => { stopAutoRefresh(); });
 </script>
 
@@ -224,6 +299,18 @@ onUnmounted(() => { stopAutoRefresh(); });
   border-radius: var(--border-radius-base);
   box-shadow: var(--box-shadow-base);
   border: 1px solid var(--sidebar-border);
+}
+
+.add-slave-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #8b5cf6;
+  font-weight: 600;
+  
+  .el-icon {
+    font-size: 14px;
+  }
 }
 
 .modern-tabs {
@@ -330,6 +417,18 @@ onUnmounted(() => { stopAutoRefresh(); });
     border: none;
     padding: 0 16px;
     &:hover { background-color: #059669; transform: translateY(-1px); }
+  }
+  &.add-btn {
+    background-color: #6366f1;
+    color: white;
+    border: none;
+    &:hover { background-color: #4f46e5; transform: translateY(-1px); }
+  }
+  &.add-slave-btn {
+    background-color: #8b5cf6;
+    color: white;
+    border: none;
+    &:hover { background-color: #7c3aed; transform: translateY(-1px); }
   }
   &:hover { transform: translateY(-1px); opacity: 0.9; }
 }

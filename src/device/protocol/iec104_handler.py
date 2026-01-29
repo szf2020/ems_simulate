@@ -94,11 +94,13 @@ class IEC104ServerHandler(ServerHandler):
                 self._server.add_monitoring_point(
                     io_address=point.address,
                     point_type=c104.Type.M_ME_NC_1,
+                    report_ms=1000,  # 自动上报间隔 1 秒
                 )
             elif frame_type == 1:  # 遥信
                 self._server.add_monitoring_point(
                     io_address=point.address,
                     point_type=c104.Type.M_SP_NA_1,
+                    report_ms=1000,  # 自动上报间隔 1 秒
                 )
             elif frame_type == 2:  # 遥控
                 self._server.add_command_point(
@@ -199,31 +201,35 @@ class IEC104ClientHandler(ClientHandler):
 
     def read_value(self, point: BasePoint) -> Any:
         """读取测点值"""
-        if self._client:
-            # IEC104 客户端通过 read_point 获取物理值
-            real_val = self._client.read_point(
-                io_address=point.address, frame_type=point.frame_type
-            )
-            if real_val is None:
-                return 0
-            
-            # 如果是遥测点，需要根据系数反向换算回寄存器/原始值
-            # 这样 store 进 point.value 后，系统显示的 real_value 才会正确
-            if isinstance(point, Yc):
-                try:
-                    return int((real_val - point.add_coe) / point.mul_coe)
-                except (ZeroDivisionError, TypeError):
-                    return 0
-            return real_val
-        return 0
+        # 检查客户端是否已连接
+        if not self._client or not self._is_running:
+            return None
+        
+        # IEC104 客户端通过 read_point 获取物理值
+        real_val = self._client.read_point(
+            io_address=point.address, frame_type=point.frame_type
+        )
+        if real_val is None:
+            return None
+        
+        # 如果是遥测点，需要根据系数反向换算回寄存器/原始值
+        # 这样 store 进 point.value 后，系统显示的 real_value 才会正确
+        if isinstance(point, Yc):
+            try:
+                return int((real_val - point.add_coe) / point.mul_coe)
+            except (ZeroDivisionError, TypeError):
+                return None
+        return real_val
 
     def write_value(self, point: BasePoint, value: Any) -> bool:
         """写入测点值（发送命令）"""
-        if self._client:
-            # 客户端写入：将内部原始值换算为物理值发送给外部设备
-            real_to_send = value
-            if isinstance(point, Yc):
-                real_to_send = value * point.mul_coe + point.add_coe
+        if not self._client or not self._is_running:
+            return False
+
+        # 客户端写入：将内部原始值换算为物理值发送给外部设备
+        real_to_send = value
+        if isinstance(point, Yc):
+            real_to_send = value * point.mul_coe + point.add_coe
             
             return self._client.write_point(
                 io_address=point.address,

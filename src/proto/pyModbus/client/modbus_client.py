@@ -90,16 +90,16 @@ class ModbusClient:
                     host=self.host, 
                     port=self.port, 
                     message_capture=self.message_capture,
-                    timeout=5.0,
-                    retries=3
+                    timeout=1.0,  # 减少超时时间，避免长时间阻塞
+                    retries=1     # 减少重试次数
                 )
             elif self.protocol_type == ProtocolType.ModbusRtuOverTcp:
                 self.client = ModbusRtuOverTcpClientWithCapture(
                     host=self.host, 
                     port=self.port, 
                     message_capture=self.message_capture,
-                    timeout=5.0,
-                    retries=3
+                    timeout=1.0,
+                    retries=1
                 )
             elif self.protocol_type == ProtocolType.ModbusRtu:
                 self.client = ModbusSerialClientWithCapture(
@@ -120,6 +120,8 @@ class ModbusClient:
             
             # 双重检查：确认 socket 是否真正建立
             if self.connected:
+                if self.log:
+                    self.log.info(f"Modbus 客户端已连接到 {self.host}:{self.port}")
                 # 某些版本的 pymodbus 可能在连接失败时仍返回 True (因为启用了重试机制)
                 # 这里强制检查 socket 对象是否创建
                 socket_obj = getattr(self.client, 'socket', None)
@@ -127,6 +129,9 @@ class ModbusClient:
                     if self.log:
                         self.log.error("Modbus client connect() returned True but socket is None")
                     self.connected = False
+            else:
+                if self.log:
+                    self.log.error(f"Modbus 客户端连接失败: {self.host}:{self.port}")
             return self.connected
         except Exception as e:
             if self.log:
@@ -229,8 +234,13 @@ class ModbusClient:
                 self.log.error("Client not connected to server")
             else:
                 print("Client not connected to server")
+            return []  # 未连接时直接返回空列表
 
         try:
+            # 调试日志
+            if self.log:
+                self.log.debug(f"读取保持寄存器: slave={slave_id}, addr={address}, count={count}")
+            
             response = self.client.read_holding_registers(
                 address, count, slave=slave_id
             )

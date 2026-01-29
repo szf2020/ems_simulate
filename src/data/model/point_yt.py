@@ -25,6 +25,10 @@ class PointYtDict(TypedDict):
     max_limit: float
     min_limit: float
     related_yc_id: Optional[int]
+    # IEC104 特定字段
+    iec_common_address: Optional[int]
+    iec_cot: Optional[int]
+    iec_quality: Optional[int]
     enable: bool
 
 
@@ -45,7 +49,7 @@ class PointYt(Base):
         Integer, ForeignKey("channel.id"), nullable=True, index=True, comment="所属通道ID"
     )
     rtu_addr: Mapped[int] = mapped_column(
-        Integer, server_default="1", comment="从机地址"
+        Integer, server_default="1", comment="从机地址/IEC104信息对象地址"
     )
     reg_addr: Mapped[str] = mapped_column(
         String(32), nullable=False, comment="寄存器地址"
@@ -54,7 +58,7 @@ class PointYt(Base):
         Integer, server_default="3", comment="功能码"
     )
     decode_code: Mapped[str] = mapped_column(
-        String(10), server_default="0x20", comment="解析码"
+        String(10), server_default="0x20", comment="解析码(Modbus专用)"
     )
 
     # 遥调特有字段（与遥测类似）
@@ -72,6 +76,17 @@ class PointYt(Base):
     )
     related_yc_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("point_yc.id"), nullable=True, comment="关联遥测点ID"
+    )
+    
+    # IEC104 特定字段
+    iec_common_address: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True, comment="IEC104公共地址"
+    )
+    iec_cot: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True, server_default="3", comment="IEC104传送原因(COT)"
+    )
+    iec_quality: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True, server_default="0", comment="IEC104品质描述符"
     )
 
     enable: Mapped[bool] = mapped_column(

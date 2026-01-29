@@ -62,6 +62,14 @@ class ModbusServer:
         self.keep_connection = keep_connection
         self.stop_event = asyncio.Event()
         self.message_capture = MessageCapture() # 报文捕获器
+        
+        # 确保 slave_id_list 包含常用的从站地址 (0, 1)
+        all_slave_ids = set(slave_id_list)
+        all_slave_ids.add(0)  # 添加广播地址
+        all_slave_ids.add(1)  # 添加默认从站地址
+        self._slave_id_list = sorted(all_slave_ids)
+        self._logger.info(f"Modbus 服务端将响应从站地址: {self._slave_id_list}")
+        
         # 创建从站上下文
         self.slaves = {
             slave_id: ModbusSlaveContext(
@@ -74,7 +82,7 @@ class ModbusServer:
                 ),  # Holding Registers 初始化为 0
                 ir=ModbusSequentialDataBlock(0, [0] * 65535),
             )  # Input Registers 初始化为 0
-            for slave_id in slave_id_list
+            for slave_id in self._slave_id_list
         }
         self.context = ModbusServerContext(slaves=self.slaves, single=False)
 
